@@ -8,7 +8,7 @@ const timeModal = document.getElementById('time-modal');
 const notificationSound = document.getElementById('notification-sound');
 
 // --- Configuration ---
-const apiKey = "AIzaSyAg0oEzZJciZxsvihHqpo"; // API Key Anda
+const apiKey = "AIzaSyAX4FOixoe_aAmlDoeH_m8QUM9RkBXGilo"; // API Key Anda
 const ownerNumber = '6285971105030';
 const encryptedOwnerNumber = btoa(ownerNumber);
 
