@@ -1,4 +1,4 @@
-// DOM Elements
+// --- DOM Elements ---
 const chatWindow = document.getElementById('chat-window');
 const messageForm = document.getElementById('message-form');
 const messageInput = document.getElementById('message-input');
@@ -12,64 +12,64 @@ const filePreview = document.getElementById('file-preview');
 const removeFileBtn = document.getElementById('remove-file-btn');
 
 // --- Configuration ---
-const apiKey = "YOUR_GEMINI_API_KEY"; // GANTI DENGAN API KEY ANDA
+const apiKey = "AIzaSyBOT0SudOG4eADrZ23XOwcql8STHZFsHug"; // API Key updated
 const ownerNumber = '6285971105030';
 const encryptedOwnerNumber = btoa(ownerNumber);
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
 
 // --- State ---
 let pendingNotification = null;
-let chatHistory = [];
-let uploadedFile = null; // To store { base64, mimeType }
+let chatHistory = []; // This will now store the full conversation history
+let uploadedFile = null; // To store { base64, mimeType, fileObject }
 
 // --- Event Listeners ---
 messageForm.addEventListener('submit', handleFormSubmit);
 suggestionButtonsContainer.addEventListener('click', handleSuggestionClick);
 chatWindow.addEventListener('click', handleChatWindowClick);
 messageInput.addEventListener('input', handleInputForCommands);
-messageInput.addEventListener('blur', () => setTimeout(() => commandSuggestions.classList.add('hidden'), 150));
+messageInput.addEventListener('blur', () => setTimeout(() => commandSuggestions.classList.add('hidden'), 200));
 commandSuggestions.addEventListener('click', handleCommandSuggestionClick);
 uploadBtn.addEventListener('click', () => fileInput.click());
 fileInput.addEventListener('change', handleFileSelected);
 removeFileBtn.addEventListener('click', removeSelectedFile);
 
-
 // Attempt to play audio on first user interaction
 document.body.addEventListener('click', () => {
     const audio = document.getElementById('background-audio');
     if (audio.paused) {
-        audio.play().catch(e => console.log("Autoplay was prevented."));
+        audio.play().catch(e => console.log("Autoplay was prevented by the browser."));
     }
 }, { once: true });
 
-
 /**
- * Calls the Gemini API to get a response.
+ * Calls the Gemini API with conversation history and optional image data.
  * @param {string} prompt - The user's prompt.
  * @param {object|null} image - The uploaded image data { base64, mimeType }.
  * @returns {Promise<string>} - A promise that resolves to the AI's response.
  */
 async function callGeminiAPI(prompt, image = null) {
-    // Use the multimodal model if an image is present, otherwise use the text model.
-    const model = image ? 'gemini-pro-vision' : 'gemini-2.5-flash-preview-05-20';
+    // Use a single, powerful multimodal model that supports history
+    const model = 'gemini-1.5-flash-latest'; // Switched to a newer model for better history support
     const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
-    let userParts = [{ text: prompt }];
+    // Construct the user's turn. It can contain both text and an image.
+    let userParts = [];
+    if (prompt) {
+        userParts.push({ text: prompt });
+    }
     if (image) {
         userParts.push({
-            inline_data: {
-                mime_type: image.mimeType,
+            inlineData: {
+                mimeType: image.mimeType,
                 data: image.base64
             }
         });
     }
+
+    // Add the new user message to the history for the API call
+    const newHistory = [...chatHistory, { role: "user", parts: userParts }];
+    const payload = { contents: newHistory };
     
-    // For the vision model, history is not supported in the same way. We send a clean prompt.
-    // For the text model, we maintain conversation history.
-    const contents = image ? [{ parts: userParts }] : [...chatHistory, { role: "user", parts: [{ text: prompt }] }];
-
-    const payload = { contents };
-
     try {
         const response = await fetch(apiUrl, {
             method: 'POST',
@@ -87,14 +87,15 @@ async function callGeminiAPI(prompt, image = null) {
         
         if (data.candidates && data.candidates.length > 0 && data.candidates[0].content) {
             const aiResponse = data.candidates[0].content.parts[0].text;
-            // Only add to history for text-based model to maintain conversation flow
-            if (!image) {
-                chatHistory.push({ role: "user", parts: [{ text: prompt }] });
-                chatHistory.push({ role: "model", parts: [{ text: aiResponse }] });
-            }
+            
+            // IMPORTANT: Update the main chatHistory state after a successful call
+            chatHistory.push({ role: "user", parts: userParts });
+            chatHistory.push({ role: "model", parts: [{ text: aiResponse }] });
+            
             return aiResponse;
         } else {
             const blockReason = data.promptFeedback?.blockReason || 'Tidak ada konten yang dihasilkan';
+            // Do not add the blocked turn to history
             return `Maaf, respons diblokir. Alasan: ${blockReason}. Coba ajukan pertanyaan lain.`;
         }
 
@@ -128,7 +129,12 @@ async function handleFormSubmit(e) {
         }
     } else if (command === '/credits') {
         displayMessage('', 'credits');
-    } else {
+    } else if (command === '/clear') {
+        chatHistory = [];
+        chatWindow.innerHTML = '';
+         displayMessage('Percakapan telah dihapus. Memulai sesi baru.', 'ai', 'info');
+    }
+    else {
         const commandContent = prompt.toLowerCase().startsWith('/ai') ? prompt.substring(3).trim() : prompt;
         await processAiResponse(commandContent, uploadedFile);
     }
@@ -175,7 +181,8 @@ function handleFileSelected(e) {
         const base64String = reader.result.split(',')[1];
         uploadedFile = {
             base64: base64String,
-            mimeType: file.type
+            mimeType: file.type,
+            fileObject: file // Store the original file object for creating a blob URL later
         };
 
         // Show preview
@@ -197,7 +204,6 @@ function removeSelectedFile() {
     filePreview.classList.add('hidden');
 }
 
-
 function displayMessage(text, sender, type = null, imageFile = null, id = null) {
     const messageContainer = document.createElement('div');
     if (id) messageContainer.id = id;
@@ -207,13 +213,13 @@ function displayMessage(text, sender, type = null, imageFile = null, id = null) 
     if (sender === 'user') {
         messageContainer.className = 'user-message-container flex justify-end';
         let imageHTML = '';
-        if (imageFile && fileInput.files.length > 0) {
+        if (imageFile && imageFile.fileObject) {
             // Create a temporary URL for the preview in the chat
-            const blob = new Blob([fileInput.files[0]], {type: imageFile.mimeType});
-            const url = URL.createObjectURL(blob);
-            imageHTML = `<img src="${url}" alt="Uploaded Image" class="max-w-xs rounded-lg mt-2 mb-2 border border-blue-500/50" style="max-height: 200px;">`;
+            const url = URL.createObjectURL(imageFile.fileObject);
+            imageHTML = `<img src="${url}" alt="Uploaded Image" class="max-w-xs rounded-lg mt-2 mb-2 border border-blue-500/50" style="max-height: 200px;" onload="URL.revokeObjectURL(this.src)">`;
         }
-        messageContainer.innerHTML = `<div class="bg-blue-600 p-3 rounded-lg rounded-br-none max-w-lg"><p class="text-sm">${text}</p>${imageHTML}</div>`;
+        const sanitizedText = text.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        messageContainer.innerHTML = `<div class="bg-blue-600 p-3 rounded-lg rounded-br-none max-w-lg"><p class="text-sm">${sanitizedText}</p>${imageHTML}</div>`;
     } else {
         messageContainer.className = 'ai-message-container flex items-end gap-3';
         let iconClass = 'fas fa-robot';
@@ -236,7 +242,9 @@ function displayMessage(text, sender, type = null, imageFile = null, id = null) 
             case 'info':
                 iconClass = 'fas fa-info-circle'; iconBg = 'bg-green-500'; contentHTML = `<p class="text-sm text-green-300">${text}</p>`; break;
             default: // 'ai' or 'final'
-                const formattedText = text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\n/g, '<br>');
+                // Basic markdown formatting
+                let formattedText = text.replace(/</g, "&lt;").replace(/>/g, "&gt;"); // Sanitize first
+                formattedText = formattedText.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\*(.*?)\*/g, '<em>$1</em>').replace(/```([\s\S]*?)```/g, '<pre class="bg-gray-900/70 p-2 rounded-md my-2 text-xs"><code>$1</code></pre>').replace(/`(.*?)`/g, '<code class="bg-gray-700/80 px-1 rounded-sm text-xs">$1</code>').replace(/\n/g, '<br>');
                 contentHTML = `<p class="text-sm">${formattedText}</p>`;
                 break;
         }
@@ -257,19 +265,39 @@ function handleChatWindowClick(e) {
     switch(action) {
         case 'copy-credits':
             const pre = button.closest('.markdown-box').querySelector('pre');
-            navigator.clipboard.writeText(pre.textContent).then(() => {
-                button.innerHTML = '<i class="fas fa-check mr-1"></i> Disalin!';
-                button.classList.add('copied');
-                setTimeout(() => {
-                    button.innerHTML = '<i class="fas fa-copy mr-1"></i> Salin';
-                    button.classList.remove('copied');
-                }, 2000);
-            });
+            // Use the clipboard API with a fallback for older browsers
+            if (navigator.clipboard && window.isSecureContext) {
+                navigator.clipboard.writeText(pre.textContent).then(() => {
+                   showCopySuccess(button);
+                });
+            } else {
+                // Fallback for non-secure contexts or older browsers
+                const textArea = document.createElement("textarea");
+                textArea.value = pre.textContent;
+                document.body.appendChild(textArea);
+                textArea.select();
+                try {
+                    document.execCommand('copy');
+                    showCopySuccess(button);
+                } catch (err) {
+                    console.error('Fallback: Oops, unable to copy', err);
+                }
+                document.body.removeChild(textArea);
+            }
             break;
         case 'show-decrypt':
             displayMessage(`Data Terenkripsi: ${encryptedOwnerNumber}`, 'ai', 'info');
             break;
     }
+}
+
+function showCopySuccess(button) {
+    button.innerHTML = '<i class="fas fa-check mr-1"></i> Disalin!';
+    button.classList.add('copied');
+    setTimeout(() => {
+        button.innerHTML = '<i class="fas fa-copy mr-1"></i> Salin';
+        button.classList.remove('copied');
+    }, 2000);
 }
 
 function hideSuggestions() {
@@ -302,10 +330,12 @@ function handleCommandSuggestionClick(e) {
         messageInput.value = item.dataset.command;
         commandSuggestions.classList.add('hidden');
         messageInput.focus();
+        // Also hide the suggestions if a command is selected
+        handleInputForCommands();
     }
 }
 
-// Time modal functions (unchanged)
+// --- Time modal functions (unchanged) ---
 function showTimeModal() {
     timeModal.innerHTML = `
         <div class="bg-gray-800/90 backdrop-blur-sm rounded-lg shadow-xl p-6 w-full max-w-sm border border-gray-700">
@@ -356,11 +386,10 @@ function handleSetTime() {
     displayMessage(`Baik! Pengingat untuk "${pendingNotification.message}" telah diatur pada pukul ${timeString}.`, 'ai', 'info');
 
     setTimeout(() => {
-        displayMessage(pendingNotification.message, 'ai', 'notification');
+        displayMessage(`🔔 PENGINGAT: ${pendingNotification.message}`, 'ai', 'notification');
         notificationSound.play();
     }, delay);
 
     timeModal.classList.add('hidden');
     pendingNotification = null;
 }
-
