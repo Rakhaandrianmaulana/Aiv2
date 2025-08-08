@@ -6,14 +6,21 @@ const suggestionButtonsContainer = document.getElementById('suggestion-buttons')
 const commandSuggestions = document.getElementById('command-suggestions');
 const timeModal = document.getElementById('time-modal');
 const notificationSound = document.getElementById('notification-sound');
+const uploadBtn = document.getElementById('upload-btn');
+const fileInput = document.getElementById('file-input');
+const filePreview = document.getElementById('file-preview');
+const removeFileBtn = document.getElementById('remove-file-btn');
 
 // --- Configuration ---
-const apiKey = "AIzaSyAX4FOixoe_aAmlDoeH_m8QUM9RkBXGilo"; // API Key Anda
+const apiKey = "YOUR_GEMINI_API_KEY"; // GANTI DENGAN API KEY ANDA
 const ownerNumber = '6285971105030';
 const encryptedOwnerNumber = btoa(ownerNumber);
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
 
+// --- State ---
 let pendingNotification = null;
 let chatHistory = [];
+let uploadedFile = null; // To store { base64, mimeType }
 
 // --- Event Listeners ---
 messageForm.addEventListener('submit', handleFormSubmit);
@@ -22,8 +29,12 @@ chatWindow.addEventListener('click', handleChatWindowClick);
 messageInput.addEventListener('input', handleInputForCommands);
 messageInput.addEventListener('blur', () => setTimeout(() => commandSuggestions.classList.add('hidden'), 150));
 commandSuggestions.addEventListener('click', handleCommandSuggestionClick);
+uploadBtn.addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', handleFileSelected);
+removeFileBtn.addEventListener('click', removeSelectedFile);
 
-// Attempt to play audio on first user interaction to comply with browser policies
+
+// Attempt to play audio on first user interaction
 document.body.addEventListener('click', () => {
     const audio = document.getElementById('background-audio');
     if (audio.paused) {
@@ -35,16 +46,29 @@ document.body.addEventListener('click', () => {
 /**
  * Calls the Gemini API to get a response.
  * @param {string} prompt - The user's prompt.
+ * @param {object|null} image - The uploaded image data { base64, mimeType }.
  * @returns {Promise<string>} - A promise that resolves to the AI's response.
  */
-async function callGeminiAPI(prompt) {
-    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
-    
-    chatHistory.push({ role: "user", parts: [{ text: prompt }] });
+async function callGeminiAPI(prompt, image = null) {
+    // Use the multimodal model if an image is present, otherwise use the text model.
+    const model = image ? 'gemini-pro-vision' : 'gemini-2.5-flash-preview-05-20';
+    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
-    const payload = {
-        contents: chatHistory,
-    };
+    let userParts = [{ text: prompt }];
+    if (image) {
+        userParts.push({
+            inline_data: {
+                mime_type: image.mimeType,
+                data: image.base64
+            }
+        });
+    }
+    
+    // For the vision model, history is not supported in the same way. We send a clean prompt.
+    // For the text model, we maintain conversation history.
+    const contents = image ? [{ parts: userParts }] : [...chatHistory, { role: "user", parts: [{ text: prompt }] }];
+
+    const payload = { contents };
 
     try {
         const response = await fetch(apiUrl, {
@@ -56,20 +80,21 @@ async function callGeminiAPI(prompt) {
         if (!response.ok) {
             const errorData = await response.json();
             console.error('API Error:', errorData);
-            const errorMessage = errorData.error?.message || 'Terjadi kesalahan saat menghubungi API.';
-            // Reset history if there's a critical error like invalid API key
-            if (response.status === 400) chatHistory = [];
-            return `Error ${response.status}: ${errorMessage}`;
+            return `Error ${response.status}: ${errorData.error?.message || 'Terjadi kesalahan saat menghubungi API.'}`;
         }
 
         const data = await response.json();
         
-        if (data.candidates && data.candidates.length > 0) {
+        if (data.candidates && data.candidates.length > 0 && data.candidates[0].content) {
             const aiResponse = data.candidates[0].content.parts[0].text;
-            chatHistory.push({ role: "model", parts: [{ text: aiResponse }] });
+            // Only add to history for text-based model to maintain conversation flow
+            if (!image) {
+                chatHistory.push({ role: "user", parts: [{ text: prompt }] });
+                chatHistory.push({ role: "model", parts: [{ text: aiResponse }] });
+            }
             return aiResponse;
         } else {
-            const blockReason = data.promptFeedback?.blockReason || 'Tidak ada konten';
+            const blockReason = data.promptFeedback?.blockReason || 'Tidak ada konten yang dihasilkan';
             return `Maaf, respons diblokir. Alasan: ${blockReason}. Coba ajukan pertanyaan lain.`;
         }
 
@@ -82,16 +107,19 @@ async function callGeminiAPI(prompt) {
 async function handleFormSubmit(e) {
     e.preventDefault();
     const message = messageInput.value.trim();
-    if (!message) return;
+    if (!message && !uploadedFile) return;
 
-    displayMessage(message, 'user');
+    // If there's an image but no text, use a default prompt
+    const prompt = message || "Jelaskan gambar ini secara detail.";
+    
+    displayMessage(prompt, 'user', null, uploadedFile);
     hideSuggestions();
     commandSuggestions.classList.add('hidden');
 
-    const command = message.toLowerCase().split(' ')[0];
+    const command = prompt.toLowerCase().split(' ')[0];
 
     if (command === '/ai2') {
-        const commandContent = message.substring(4).trim();
+        const commandContent = prompt.substring(4).trim();
         if (!commandContent) {
             displayMessage("Silakan masukkan pesan untuk pengingat.", 'ai', 'error');
         } else {
@@ -101,23 +129,21 @@ async function handleFormSubmit(e) {
     } else if (command === '/credits') {
         displayMessage('', 'credits');
     } else {
-        const commandContent = message.toLowerCase().startsWith('/ai') ? message.substring(3).trim() : message;
-        await processAiResponse(commandContent);
+        const commandContent = prompt.toLowerCase().startsWith('/ai') ? prompt.substring(3).trim() : prompt;
+        await processAiResponse(commandContent, uploadedFile);
     }
 
     messageInput.value = '';
+    if (uploadedFile) {
+        removeSelectedFile();
+    }
 }
 
-async function processAiResponse(userMessage) {
-    if (!userMessage) {
-        displayMessage("Silakan ketik pertanyaan Anda setelah perintah /ai.", 'ai', 'error');
-        return;
-    }
-
+async function processAiResponse(userMessage, image = null) {
     const thinkingMessageId = `thinking-${Date.now()}`;
-    displayMessage('', 'ai-thinking-process', null, thinkingMessageId);
+    displayMessage('', 'ai-thinking-process', null, null, thinkingMessageId);
 
-    const finalResponse = await callGeminiAPI(userMessage);
+    const finalResponse = await callGeminiAPI(userMessage, image);
     
     const thinkingMessage = document.getElementById(thinkingMessageId);
     if(thinkingMessage) {
@@ -127,7 +153,141 @@ async function processAiResponse(userMessage) {
     displayMessage(finalResponse, 'ai', 'final');
 }
 
-// --- Other Functions (UI, Time Modal, etc.) ---
+function handleFileSelected(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    // Validation
+    if (!file.type.startsWith('image/')) {
+        displayMessage('Hanya file gambar (JPEG, PNG, GIF, WEBP) yang diizinkan.', 'ai', 'error');
+        fileInput.value = ''; // Reset input
+        return;
+    }
+    if (file.size > MAX_FILE_SIZE) {
+        displayMessage(`Ukuran file terlalu besar. Maksimal ${MAX_FILE_SIZE / 1024 / 1024} MB.`, 'ai', 'error');
+        fileInput.value = ''; // Reset input
+        return;
+    }
+
+    // Read and convert file
+    const reader = new FileReader();
+    reader.onloadend = () => {
+        const base64String = reader.result.split(',')[1];
+        uploadedFile = {
+            base64: base64String,
+            mimeType: file.type
+        };
+
+        // Show preview
+        document.getElementById('preview-image').src = reader.result;
+        document.getElementById('preview-name').textContent = file.name;
+        document.getElementById('preview-size').textContent = `${(file.size / 1024).toFixed(2)} KB`;
+        filePreview.classList.remove('hidden');
+    };
+    reader.onerror = () => {
+        displayMessage('Gagal membaca file.', 'ai', 'error');
+        uploadedFile = null;
+    };
+    reader.readAsDataURL(file);
+}
+
+function removeSelectedFile() {
+    uploadedFile = null;
+    fileInput.value = ''; // Important to allow re-selecting the same file
+    filePreview.classList.add('hidden');
+}
+
+
+function displayMessage(text, sender, type = null, imageFile = null, id = null) {
+    const messageContainer = document.createElement('div');
+    if (id) messageContainer.id = id;
+
+    let contentHTML = '';
+
+    if (sender === 'user') {
+        messageContainer.className = 'user-message-container flex justify-end';
+        let imageHTML = '';
+        if (imageFile && fileInput.files.length > 0) {
+            // Create a temporary URL for the preview in the chat
+            const blob = new Blob([fileInput.files[0]], {type: imageFile.mimeType});
+            const url = URL.createObjectURL(blob);
+            imageHTML = `<img src="${url}" alt="Uploaded Image" class="max-w-xs rounded-lg mt-2 mb-2 border border-blue-500/50" style="max-height: 200px;">`;
+        }
+        messageContainer.innerHTML = `<div class="bg-blue-600 p-3 rounded-lg rounded-br-none max-w-lg"><p class="text-sm">${text}</p>${imageHTML}</div>`;
+    } else {
+        messageContainer.className = 'ai-message-container flex items-end gap-3';
+        let iconClass = 'fas fa-robot';
+        let iconBg = 'bg-gradient-to-br from-cyan-500 to-blue-600';
+        let messageBg = 'bg-gray-800/80 backdrop-blur-sm';
+
+        switch(type) {
+            case 'ai-thinking-process':
+                iconClass = 'fas fa-spinner fa-spin';
+                contentHTML = `<p class="text-sm">AI sedang memproses...</p>`;
+                break;
+            case 'credits':
+                iconClass = 'fas fa-trophy';
+                iconBg = 'bg-gradient-to-br from-amber-400 to-orange-500';
+                const creditsText = `╭───『 🧠 𝙏𝙌𝙏𝙊 : 𝘾𝙔𝘽𝙀𝙍 𝘾𝙍𝙀𝘿𝙄𝙏𝙎 』───╮\n│ ╭─────────────⌬\n│ │ 👤 *Main Developer*:\n│ │     ꒒ꍏꈤꍏꃴꌩꈤ 🜲\n│ │ \n│ │ 💡 *Special Thanks*:\n│ │     ⦿ Agus // Core Architect ⚙️\n│ │     ⦿ LANA (Private Brain AI) 🧬\n│ │     ⦿ AllRes // System Backup ☁️\n│ │ \n│ │ 🛠️ *Support Team*:\n│ │     ⦿ CodePhantomX // Debugging Ops\n│ │     ⦿ ZeroTrace // Log Scanner\n│ │     ⦿ NoSignal404 // Data Ghost\n│ ╰─────────────⌬\n╰───────────────────────────────╯`;
+                contentHTML = `<div class="markdown-box"><button data-action="copy-credits" class="copy-btn"><i class="fas fa-copy mr-1"></i> Salin</button><pre>${creditsText}</pre></div><div class="mt-3 pt-2 border-t border-gray-700/50 flex gap-2"><button data-action="show-decrypt" class="text-xs bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-1 px-3 rounded-md transition-colors flex items-center gap-2"><i class="fas fa-user-secret"></i> Akses Kontak Rahasia</button></div>`;
+                break;
+            case 'error':
+                iconClass = 'fas fa-exclamation-triangle'; iconBg = 'bg-red-500'; contentHTML = `<p class="text-sm text-red-300">${text}</p>`; break;
+            case 'info':
+                iconClass = 'fas fa-info-circle'; iconBg = 'bg-green-500'; contentHTML = `<p class="text-sm text-green-300">${text}</p>`; break;
+            default: // 'ai' or 'final'
+                const formattedText = text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\n/g, '<br>');
+                contentHTML = `<p class="text-sm">${formattedText}</p>`;
+                break;
+        }
+        
+        messageContainer.innerHTML = `<div class="flex-shrink-0 w-8 h-8 rounded-full ${iconBg} flex items-center justify-center"><i class="${iconClass} text-white"></i></div><div class="${messageBg} p-3 rounded-lg rounded-bl-none max-w-lg">${contentHTML}</div>`;
+    }
+
+    chatWindow.appendChild(messageContainer);
+    chatWindow.scrollTop = chatWindow.scrollHeight;
+}
+
+
+function handleChatWindowClick(e) {
+    const button = e.target.closest('button');
+    if (!button) return;
+
+    const action = button.dataset.action;
+    switch(action) {
+        case 'copy-credits':
+            const pre = button.closest('.markdown-box').querySelector('pre');
+            navigator.clipboard.writeText(pre.textContent).then(() => {
+                button.innerHTML = '<i class="fas fa-check mr-1"></i> Disalin!';
+                button.classList.add('copied');
+                setTimeout(() => {
+                    button.innerHTML = '<i class="fas fa-copy mr-1"></i> Salin';
+                    button.classList.remove('copied');
+                }, 2000);
+            });
+            break;
+        case 'show-decrypt':
+            displayMessage(`Data Terenkripsi: ${encryptedOwnerNumber}`, 'ai', 'info');
+            break;
+    }
+}
+
+function hideSuggestions() {
+    if (!suggestionButtonsContainer.classList.contains('hidden')) {
+        suggestionButtonsContainer.classList.add('hidden');
+    }
+}
+
+async function handleSuggestionClick(e) {
+    if (e.target.classList.contains('suggestion-btn')) {
+        const message = e.target.textContent;
+        messageInput.value = `/ai ${message}`;
+        // Create a new submit event to ensure it bubbles up correctly
+        const submitEvent = new Event('submit', { bubbles: true, cancelable: true });
+        messageForm.dispatchEvent(submitEvent);
+    }
+}
+
 function handleInputForCommands() {
     if (messageInput.value === '/') {
         commandSuggestions.classList.remove('hidden');
@@ -145,14 +305,7 @@ function handleCommandSuggestionClick(e) {
     }
 }
 
-async function handleSuggestionClick(e) {
-    if (e.target.classList.contains('suggestion-btn')) {
-        const message = e.target.textContent;
-        messageInput.value = `/ai ${message}`;
-        await handleFormSubmit(new Event('submit', { cancelable: true }));
-    }
-}
-
+// Time modal functions (unchanged)
 function showTimeModal() {
     timeModal.innerHTML = `
         <div class="bg-gray-800/90 backdrop-blur-sm rounded-lg shadow-xl p-6 w-full max-w-sm border border-gray-700">
@@ -188,7 +341,7 @@ function handleSetTime() {
     const s = parseInt(document.getElementById('second-input').value);
 
     if (isNaN(h) || isNaN(m) || isNaN(s) || h < 0 || h > 23 || m < 0 || m > 59 || s < 0 || s > 59) {
-        alert("Waktu tidak valid.");
+        displayMessage("Waktu yang dimasukkan tidak valid.", 'ai', 'error');
         return;
     }
 
@@ -211,102 +364,3 @@ function handleSetTime() {
     pendingNotification = null;
 }
 
-function displayMessage(text, sender, type = null, id = null) {
-    const messageContainer = document.createElement('div');
-    if (id) messageContainer.id = id;
-
-    messageContainer.className = 'ai-message-container flex items-end gap-3';
-    let contentHTML = '';
-    let iconClass = 'fas fa-robot';
-    let iconBg = 'bg-gradient-to-br from-cyan-500 to-blue-600';
-    let messageBg = 'bg-gray-800/80 backdrop-blur-sm';
-
-    if (sender === 'user') {
-        messageContainer.className = 'user-message-container flex justify-end';
-        messageContainer.innerHTML = `<div class="bg-blue-600 p-3 rounded-lg rounded-br-none max-w-lg"><p class="text-sm">${text}</p></div>`;
-    } else {
-         switch(sender) {
-            case 'ai-thinking-process':
-                iconClass = 'fas fa-spinner fa-spin';
-                contentHTML = `<p class="text-sm">AI sedang memproses...</p>`;
-                break;
-            case 'credits':
-                iconClass = 'fas fa-trophy';
-                iconBg = 'bg-gradient-to-br from-amber-400 to-orange-500';
-                const creditsText = `╭───『 🧠 𝙏𝙌𝙏𝙊 : 𝘾𝙔𝘽𝙀𝙍 𝘾𝙍𝙀𝘿𝙄𝙏𝙎 』───╮\n│ ╭─────────────⌬\n│ │ 👤 *Main Developer*:\n│ │     ꒒ꍏꈤꍏꃴꌩꈤ 🜲\n│ │ \n│ │ 💡 *Special Thanks*:\n│ │     ⦿ Agus // Core Architect ⚙️\n│ │     ⦿ LANA (Private Brain AI) 🧬\n│ │     ⦿ AllRes // System Backup ☁️\n│ │ \n│ │ 🛠️ *Support Team*:\n│ │     ⦿ CodePhantomX // Debugging Ops\n│ │     ⦿ ZeroTrace // Log Scanner\n│ │     ⦿ NoSignal404 // Data Ghost\n│ ╰─────────────⌬\n╰───────────────────────────────╯`;
-                contentHTML = `<div class="markdown-box"><button data-action="copy-credits" class="copy-btn"><i class="fas fa-copy mr-1"></i> Salin</button><pre>${creditsText}</pre></div><div class="mt-3 pt-2 border-t border-gray-700/50 flex gap-2"><button data-action="show-decrypt" class="text-xs bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-1 px-3 rounded-md transition-colors flex items-center gap-2"><i class="fas fa-user-secret"></i> Akses Kontak Rahasia</button></div>`;
-                break;
-            case 'decrypt-prompt':
-                iconClass = 'fas fa-lock';
-                iconBg = 'bg-gradient-to-br from-indigo-500 to-purple-600';
-                contentHTML = `<p class="text-sm font-mono break-all">Data Terenkripsi:<br>${text}</p><div class="mt-3 pt-2 border-t border-gray-700/50 flex gap-2"><button data-action="decrypt-number" data-encrypted="${text}" class="text-xs bg-purple-600 hover:bg-purple-700 text-white font-bold py-1 px-3 rounded-md transition-colors flex items-center gap-2"><i class="fas fa-key"></i> Decrypt</button></div>`;
-                break;
-            case 'decrypt-result':
-                 iconClass = 'fas fa-lock-open';
-                iconBg = 'bg-gradient-to-br from-green-500 to-emerald-600';
-                contentHTML = `<p class="text-sm">Dekripsi Berhasil. Kontak Owner:</p><p class="text-lg font-bold font-mono">${text}</p><div class="mt-3 pt-2 border-t border-gray-700/50 flex gap-2"><button data-action="contact-owner" data-number="${text}" class="text-xs bg-green-600 hover:bg-green-700 text-white font-bold py-1 px-3 rounded-md transition-colors flex items-center gap-2"><i class="fab fa-whatsapp"></i> Hubungi Sekarang</button></div>`;
-                break;
-            case 'error':
-                iconClass = 'fas fa-exclamation-triangle'; iconBg = 'bg-red-500'; contentHTML = `<p class="text-sm text-red-300">${text}</p>`; break;
-            case 'info':
-                iconClass = 'fas fa-info-circle'; iconBg = 'bg-green-500'; contentHTML = `<p class="text-sm text-green-300">${text}</p>`; break;
-            case 'ai': 
-            default:
-                const formattedText = text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\n/g, '<br>');
-                contentHTML = `<p class="text-sm">${formattedText}</p><div class="mt-3 pt-2 border-t border-gray-700/50 flex gap-2"><button data-action="translate" class="text-xs text-cyan-400 hover:text-cyan-300 transition-colors"><i class="fas fa-language mr-1"></i> Terjemahkan</button></div>`;
-                break;
-        }
-        if (type === 'notification') {
-            iconClass = 'fas fa-bell'; iconBg = 'bg-yellow-500 animate-pulse'; contentHTML = `<p class="font-bold text-yellow-300">PENGINGAT!</p><p class="text-sm mt-1">${text}</p>`;
-        }
-        messageContainer.innerHTML = `<div class="flex-shrink-0 w-8 h-8 rounded-full ${iconBg} flex items-center justify-center"><i class="${iconClass} text-white"></i></div><div class="${messageBg} p-3 rounded-lg rounded-bl-none max-w-lg">${contentHTML}</div>`;
-    }
-
-    chatWindow.appendChild(messageContainer);
-    chatWindow.scrollTop = chatWindow.scrollHeight;
-}
-
-function handleChatWindowClick(e) {
-    const button = e.target.closest('button');
-    if (!button) return;
-
-    const action = button.dataset.action;
-    switch(action) {
-        case 'translate':
-            const p = button.closest('.p-3').querySelector('p');
-            processAiResponse(`Terjemahkan teks berikut ke dalam Bahasa Inggris: "${p.innerText}"`);
-            break;
-        case 'copy-credits':
-            const pre = button.nextElementSibling;
-            const textarea = document.createElement('textarea');
-            textarea.value = pre.textContent;
-            document.body.appendChild(textarea);
-            textarea.select();
-            document.execCommand('copy');
-            document.body.removeChild(textarea);
-
-            button.innerHTML = '<i class="fas fa-check mr-1"></i> Disalin!';
-            button.classList.add('copied');
-            setTimeout(() => {
-                button.innerHTML = '<i class="fas fa-copy mr-1"></i> Salin';
-                button.classList.remove('copied');
-            }, 2000);
-            break;
-        case 'show-decrypt':
-            displayMessage(encryptedOwnerNumber, 'decrypt-prompt');
-            break;
-        case 'decrypt-number':
-            const decrypted = atob(button.dataset.encrypted);
-            displayMessage(decrypted, 'decrypt-result');
-            break;
-        case 'contact-owner':
-            window.open(`https://wa.me/${button.dataset.number}`, '_blank');
-            break;
-    }
-}
-
-function hideSuggestions() {
-    if (!suggestionButtonsContainer.classList.contains('hidden')) {
-        suggestionButtonsContainer.classList.add('hidden');
-    }
-}
