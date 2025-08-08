@@ -9,30 +9,24 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fira+Code&display=swap" rel="stylesheet">
+    
+    <!-- AdSense Script -->
+    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-3174950950089110"
+     crossorigin="anonymous"></script>
+    
     <style>
         body {
             font-family: 'Inter', sans-serif;
-            background-color: #030712; /* Fallback background */
+            background-color: #030712;
         }
         #chat-window::-webkit-scrollbar { width: 6px; }
         #chat-window::-webkit-scrollbar-track { background: #1f293780; }
         #chat-window::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 3px; }
         #chat-window::-webkit-scrollbar-thumb:hover { background: #6b7280; }
         
-        .thinking-steps-details {
-            transition: max-height 0.5s ease-in-out, opacity 0.3s ease-in-out;
-            max-height: 0;
-            overflow: hidden;
-            opacity: 0;
-        }
-        .thinking-steps-details.expanded {
-            max-height: 500px;
-            opacity: 1;
-        }
-
         .markdown-box {
             position: relative;
-            background-color: #111827cc; /* bg-gray-900 with transparency */
+            background-color: #111827cc;
             border: 1px solid #374151;
             border-radius: 0.5rem;
             padding: 1rem;
@@ -65,6 +59,10 @@
             background-color: #16a34a;
             color: white;
         }
+        /* Style for file preview */
+        #file-preview {
+            transition: all 0.3s ease-in-out;
+        }
     </style>
 </head>
 <body class="text-gray-200 flex flex-col h-screen antialiased">
@@ -82,6 +80,19 @@
         </h1>
     </header>
 
+    <!-- AdSense Ad Unit -->
+    <div class="p-2 text-center bg-gray-900/30 backdrop-blur-sm">
+        <ins class="adsbygoogle"
+             style="display:block"
+             data-ad-client="ca-pub-3174950950089110"
+             data-ad-slot="YOUR_AD_SLOT_ID" <!-- GANTI DENGAN AD SLOT ID ANDA -->
+             data-ad-format="auto"
+             data-full-width-responsive="true"></ins>
+        <script>
+             (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+    </div>
+
     <!-- Chat Window -->
     <main id="chat-window" class="flex-1 p-4 overflow-y-auto space-y-6">
         <!-- Initial AI Message -->
@@ -90,7 +101,7 @@
                 <i class="fas fa-robot text-white"></i>
             </div>
             <div class="bg-gray-800/80 backdrop-blur-sm p-3 rounded-lg rounded-bl-none max-w-lg">
-                <p class="text-sm">Halo! Saya adalah asisten AI yang terhubung dengan Gemini. Apa yang bisa saya bantu hari ini? Ketik <code class="bg-gray-700/80 px-1 rounded-sm">/</code> untuk melihat perintah.</p>
+                <p class="text-sm">Halo! Saya adalah asisten AI yang terhubung dengan Gemini. Anda sekarang bisa mengunggah gambar untuk dianalisis. Apa yang bisa saya bantu hari ini? Ketik <code class="bg-gray-700/80 px-1 rounded-sm">/</code> untuk melihat perintah.</p>
             </div>
         </div>
     </main>
@@ -121,24 +132,46 @@
                 <p class="text-xs text-gray-400">Tampilkan credits dan informasi developer.</p>
             </div>
         </div>
+
+        <!-- File Preview Area -->
+        <div id="file-preview" class="hidden p-2 mb-2 bg-gray-800/80 border border-gray-700 rounded-lg">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                    <img id="preview-image" src="" alt="Preview" class="w-12 h-12 object-cover rounded-md">
+                    <div class="text-xs">
+                        <p id="preview-name" class="font-semibold text-gray-300"></p>
+                        <p id="preview-size" class="text-gray-400"></p>
+                    </div>
+                </div>
+                <button id="remove-file-btn" class="text-gray-400 hover:text-white transition-colors">
+                    <i class="fas fa-times-circle fa-lg"></i>
+                </button>
+            </div>
+        </div>
         
         <!-- Input Form -->
         <form id="message-form" class="flex items-center gap-3">
-            <input type="text" id="message-input" class="flex-1 bg-gray-800/80 border border-gray-700 rounded-full py-2 px-5 focus:outline-none focus:ring-2 focus:ring-cyan-500 transition-all" placeholder="Ketik pesan Anda... (/ai, /ai2, /credits)">
+            <!-- Hidden file input -->
+            <input type="file" id="file-input" class="hidden" accept="image/*">
+            
+            <!-- Upload Button -->
+            <button type="button" id="upload-btn" class="bg-gray-700 hover:bg-gray-600 text-white rounded-full w-11 h-11 flex items-center justify-center transition-colors">
+                <i class="fas fa-paperclip"></i>
+            </button>
+
+            <input type="text" id="message-input" class="flex-1 bg-gray-800/80 border border-gray-700 rounded-full py-2 px-5 focus:outline-none focus:ring-2 focus:ring-cyan-500 transition-all" placeholder="Ketik pesan atau unggah gambar...">
+            
             <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white rounded-full w-11 h-11 flex items-center justify-center transition-transform duration-200 active:scale-90">
                 <i class="fas fa-paper-plane"></i>
             </button>
         </form>
     </footer>
 
-    <!-- Time Input Modal -->
-    <div id="time-modal" class="fixed inset-0 bg-black/70 flex items-center justify-center p-4 hidden z-50">
-        <!-- Modal Content is generated dynamically -->
-    </div>
-
+    <!-- Other Modals and Audio Elements -->
+    <div id="time-modal" class="fixed inset-0 bg-black/70 flex items-center justify-center p-4 hidden z-50"></div>
     <audio id="notification-sound" src="https://assets.mixkit.co/sfx/preview/mixkit-correct-answer-tone-2870.mp3" preload="auto"></audio>
 
-    <!-- Link to the external JavaScript file -->
+    <!-- Main Script -->
     <script src="function.js" defer></script>
 </body>
 </html>
