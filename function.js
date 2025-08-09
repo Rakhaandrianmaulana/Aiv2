@@ -13,11 +13,34 @@ const notificationSound = document.getElementById('notification-sound');
 const suggestionButtons = document.getElementById('suggestion-buttons');
 const commandSuggestions = document.getElementById('command-suggestions');
 const submitButton = document.getElementById('submit-button');
+const backgroundAudio = document.getElementById('background-audio');
 
 // --- API and State Management ---
 const API_KEY = 'AIzaSyADD8GLekHkXmtt7nFanPXiU6VFMw6UdB8'; // Your Gemini API Key
 let conversationHistory = [];
 let attachedFile = null;
+
+// --- Initial Setup for Audio ---
+document.addEventListener('DOMContentLoaded', () => {
+    // Create an overlay to ask for user interaction to play audio
+    const overlay = document.createElement('div');
+    overlay.id = 'audio-overlay';
+    overlay.style.cssText = 'position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.8); color: white; display: flex; justify-content: center; align-items: center; text-align: center; z-index: 100; cursor: pointer;';
+    overlay.innerHTML = `
+        <div class="p-8 rounded-lg">
+            <h2 class="text-2xl font-bold mb-4">Selamat Datang</h2>
+            <p class="text-lg">Klik di mana saja untuk memulai musik dan masuk ke aplikasi.</p>
+            <i class="fas fa-volume-up fa-2x mt-6"></i>
+        </div>
+    `;
+    document.body.appendChild(overlay);
+
+    overlay.addEventListener('click', () => {
+        backgroundAudio.play().catch(e => console.error("Audio play failed:", e));
+        overlay.style.display = 'none';
+    }, { once: true });
+});
+
 
 // --- Utility Functions ---
 const copyToClipboard = (text, btnElement) => {
@@ -144,7 +167,7 @@ const getAIResponse = async (prompt, file) => {
 
         const data = await response.json();
         
-        if (data.candidates && data.candidates.length > 0) {
+        if (data.candidates && data.candidates.length > 0 && data.candidates[0].content && data.candidates[0].content.parts) {
             const aiResponseText = data.candidates[0].content.parts[0].text;
             displayMessage(aiResponseText, 'ai');
             
@@ -153,12 +176,13 @@ const getAIResponse = async (prompt, file) => {
             conversationHistory.push({ role: 'model', parts: [{ text: aiResponseText }] });
 
         } else {
-            displayMessage("Maaf, tidak ada respons yang diterima dari AI. Ini mungkin karena filter keamanan.", 'system');
+            const safetyMessage = data.promptFeedback?.blockReason ? `Permintaan diblokir karena: ${data.promptFeedback.blockReason}` : "Maaf, tidak ada respons yang diterima dari AI. Ini mungkin karena filter keamanan.";
+            displayMessage(safetyMessage, 'system');
         }
 
     } catch (error) {
         console.error("Error calling Gemini API:", error);
-        displayMessage(`Terjadi kesalahan: ${error.message}`, 'system');
+        displayMessage(`Terjadi kesalahan saat menghubungi AI: ${error.message}`, 'system');
     } finally {
         removeTypingIndicator();
         notificationSound.play().catch(e => console.log("Audio play failed:", e));
@@ -185,14 +209,14 @@ const displayMessage = (text, sender, file = null) => {
             let processedText = text.replace(/</g, "&lt;").replace(/>/g, "&gt;");
             processedText = processedText.replace(/```(\w*)\n([\s\S]*?)```/g, (match, lang, code) => {
                 const language = lang || 'code';
-                return `
-                </div><div class="markdown-box w-full">
+                // Need to handle the code separately to avoid it being wrapped in a div that breaks the layout
+                return `</div></div><div class="w-full my-2"><div class="markdown-box">
                     <div class="code-header">
                         <span>${language}</span>
                         <button class="copy-btn"><i class="far fa-copy mr-1"></i> Salin</button>
                     </div>
                     <pre><code>${code.trim()}</code></pre>
-                </div><div class="text-sm">`;
+                </div></div><div class="flex items-end gap-3 ${sender === 'user' ? 'justify-end' : ''}"><div class="text-sm">`;
             });
             contentHTML += `<div class="text-sm">${processedText}</div>`;
         }
