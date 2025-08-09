@@ -21,15 +21,14 @@ let conversationHistory = [];
 let attachedFile = null;
 const songs = [
     { title: "Mitty Zasia - Sesuatu di Jogja", url: "https://files.catbox.moe/3yeu0x.mp3" },
-    { title: "Adhitia Sofyan - Sesuatu di Jogja", url: "https://files.catbox.moe/xcpioq.mp3" }
+    { title: "Andra and The BackBone - Sempurna", url: "https://files.catbox.moe/xcpioq.mp3" }
 ];
 let currentSong = {};
 
 // --- Initial Setup for Audio and Music Selection ---
 document.addEventListener('DOMContentLoaded', () => {
     // 1. Randomly select a song
-    const randomIndex = Math.floor(Math.random() * songs.length);
-    currentSong = songs[randomIndex];
+    currentSong = songs[Math.floor(Math.random() * songs.length)];
     backgroundAudio.src = currentSong.url;
 
     // 2. Create an overlay to ask for user interaction to play audio
@@ -135,8 +134,8 @@ const handleCommand = (command) => {
 const getAIResponse = async (prompt, file) => {
     displayTypingIndicator();
 
-    // Correct model names for v1beta API
-    const model = file ? 'gemini-1.0-pro-vision-latest' : 'gemini-1.0-pro';
+    // FIXED: Correct model names for v1beta API
+    const model = file ? 'gemini-pro-vision' : 'gemini-pro';
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${API_KEY}`;
     
     const userParts = [];
@@ -208,7 +207,7 @@ const displayMessage = (text, sender, file = null) => {
     } else {
         messageContainer.className = `flex items-end gap-3 ${sender === 'user' ? 'justify-end' : ''}`;
         if (text) {
-            const parts = text.split(/(```(?:\w*)\n[\s\S]*?\n```)/g);
+            const parts = text.split(/(```\w*\n[\s\S]*?\n```)/g);
             let finalHTML = '';
             for (const part of parts) {
                 if (part.startsWith('```')) {
@@ -218,20 +217,19 @@ const displayMessage = (text, sender, file = null) => {
                         const language = lang || 'code';
                         const escapedCode = code.replace(/</g, "&lt;").replace(/>/g, "&gt;");
                         finalHTML += `
-                        </div></div></div><div class="w-full my-1"><div class="markdown-box">
+                        <div class="markdown-box w-full my-2">
                             <div class="code-header">
                                 <span>${language}</span>
                                 <button class="copy-btn"><i class="far fa-copy mr-1"></i> Salin</button>
                             </div>
                             <pre><code>${escapedCode.trim()}</code></pre>
-                        </div></div><div><div><div class="text-sm">
-                        `;
+                        </div>`;
                     }
-                } else {
-                    finalHTML += part.replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, '<br>');
+                } else if (part.trim()) {
+                    finalHTML += `<p class="text-sm">${part.replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, '<br>')}</p>`;
                 }
             }
-            contentHTML += `<div class="text-sm">${finalHTML}</div>`;
+            contentHTML += finalHTML;
         }
     }
 
