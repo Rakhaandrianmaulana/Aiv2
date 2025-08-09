@@ -15,28 +15,39 @@ const commandSuggestions = document.getElementById('command-suggestions');
 const submitButton = document.getElementById('submit-button');
 const backgroundAudio = document.getElementById('background-audio');
 
-// --- API and State Management ---
+// --- API, State, and Music Management ---
 const API_KEY = 'AIzaSyADD8GLekHkXmtt7nFanPXiU6VFMw6UdB8'; // Your Gemini API Key
 let conversationHistory = [];
 let attachedFile = null;
+const songs = [
+    { title: "Mitty Zasia - Sesuatu di Jogja", url: "https://files.catbox.moe/3yeu0x.mp3" },
+    { title: "Adhitia Sofyan - Sesuatu di Jogja", url: "https://files.catbox.moe/xcpioq.mp3" }
+];
+let currentSong = {};
 
-// --- Initial Setup for Audio ---
+// --- Initial Setup for Audio and Music Selection ---
 document.addEventListener('DOMContentLoaded', () => {
-    // Create an overlay to ask for user interaction to play audio
+    // 1. Randomly select a song
+    const randomIndex = Math.floor(Math.random() * songs.length);
+    currentSong = songs[randomIndex];
+    backgroundAudio.src = currentSong.url;
+
+    // 2. Create an overlay to ask for user interaction to play audio
     const overlay = document.createElement('div');
     overlay.id = 'audio-overlay';
-    overlay.style.cssText = 'position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.8); color: white; display: flex; justify-content: center; align-items: center; text-align: center; z-index: 100; cursor: pointer;';
+    overlay.style.cssText = 'position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.85); color: white; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; z-index: 100; cursor: pointer; backdrop-filter: blur(5px);';
     overlay.innerHTML = `
         <div class="p-8 rounded-lg">
-            <h2 class="text-2xl font-bold mb-4">Selamat Datang</h2>
-            <p class="text-lg">Klik di mana saja untuk memulai musik dan masuk ke aplikasi.</p>
-            <i class="fas fa-volume-up fa-2x mt-6"></i>
+            <h2 class="text-3xl font-bold mb-4">Selamat Datang</h2>
+            <p class="text-lg">Klik di mana saja untuk memulai musik dan masuk.</p>
+            <i class="fas fa-play-circle fa-3x mt-8 animate-pulse"></i>
         </div>
     `;
     document.body.appendChild(overlay);
 
+    // 3. Play music and remove overlay on click
     overlay.addEventListener('click', () => {
-        backgroundAudio.play().catch(e => console.error("Audio play failed:", e));
+        backgroundAudio.play().catch(e => console.error("Gagal memutar audio:", e));
         overlay.style.display = 'none';
     }, { once: true });
 });
@@ -55,7 +66,6 @@ const copyToClipboard = (text, btnElement) => {
     });
 };
 
-// Converts a File object to a GoogleGenerativeAI.Part object.
 const fileToGenerativePart = (file) => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -63,7 +73,7 @@ const fileToGenerativePart = (file) => {
       resolve({
         inlineData: {
           mimeType: file.type,
-          data: reader.result.split(',')[1] // Get base64 part
+          data: reader.result.split(',')[1]
         }
       });
     };
@@ -75,7 +85,6 @@ const fileToGenerativePart = (file) => {
 
 // --- Core Functions ---
 const handleUserInput = async (text, file = null) => {
-    // Disable form while processing
     submitButton.disabled = true;
     messageInput.disabled = true;
 
@@ -85,14 +94,12 @@ const handleUserInput = async (text, file = null) => {
 
     if (text.startsWith('/')) {
         handleCommand(text);
-        messageInput.value = '';
     } else {
         await getAIResponse(text, file);
-        messageInput.value = '';
-        removeFile();
     }
     
-    // Re-enable form
+    messageInput.value = '';
+    removeFile();
     submitButton.disabled = false;
     messageInput.disabled = false;
     messageInput.focus();
@@ -109,8 +116,8 @@ const handleCommand = (command) => {
                     <div class="text-sm space-y-2 text-gray-300">
                         <p><i class="fas fa-code w-5 mr-2 text-gray-400"></i>UI by LanaVyn with JS & TailwindCSS.</p>
                         <p><i class="fas fa-brain w-5 mr-2 text-gray-400"></i>AI powered by Google Gemini.</p>
-                        <p><i class="fas fa-music w-5 mr-2 text-gray-400"></i>Musik: Mitty Zasia - Sesuatu di Jogja</p>
-                        <div class="flex items-center pt-2 border-t border-gray-700/50">
+                        <p><i class="fas fa-music w-5 mr-2 text-gray-400"></i>Now Playing: <strong>${currentSong.title || 'Music'}</strong></p>
+                        <div class="flex items-center pt-2 border-t border-gray-700/50 mt-3">
                             <i class="fab fa-whatsapp w-5 mr-2 text-gray-400"></i>
                             <a href="https://wa.me/6285971105030" target="_blank" class="text-cyan-400 hover:underline">6285971105030</a>
                             <button class="js-copy-btn ml-auto text-xs bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded transition-colors" data-copy="6285971105030">Salin</button>
@@ -120,21 +127,18 @@ const handleCommand = (command) => {
             `;
             displayMessage(creditsHTML, 'system');
             break;
-        case '/ai':
-            // This is handled by default now, but you could add specific logic here if needed.
-            break;
         default:
-            displayMessage(`Unknown command: ${cmd}`, 'system');
+            displayMessage(`Perintah tidak dikenal: ${cmd}`, 'system');
     }
 };
 
 const getAIResponse = async (prompt, file) => {
     displayTypingIndicator();
 
-    const model = file ? 'gemini-pro-vision' : 'gemini-pro';
+    // Correct model names for v1beta API
+    const model = file ? 'gemini-1.0-pro-vision-latest' : 'gemini-1.0-pro';
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${API_KEY}`;
     
-    // Add user's new prompt to history for this call
     const userParts = [];
     if (prompt) {
         userParts.push({ text: prompt });
@@ -168,10 +172,9 @@ const getAIResponse = async (prompt, file) => {
         const data = await response.json();
         
         if (data.candidates && data.candidates.length > 0 && data.candidates[0].content && data.candidates[0].content.parts) {
-            const aiResponseText = data.candidates[0].content.parts[0].text;
+            const aiResponseText = data.candidates[0].content.parts.map(p => p.text).join("");
             displayMessage(aiResponseText, 'ai');
             
-            // Update conversation history
             conversationHistory.push({ role: 'user', parts: userParts });
             conversationHistory.push({ role: 'model', parts: [{ text: aiResponseText }] });
 
@@ -185,7 +188,7 @@ const getAIResponse = async (prompt, file) => {
         displayMessage(`Terjadi kesalahan saat menghubungi AI: ${error.message}`, 'system');
     } finally {
         removeTypingIndicator();
-        notificationSound.play().catch(e => console.log("Audio play failed:", e));
+        notificationSound.play().catch(e => console.log("Gagal memutar notifikasi:", e));
     }
 };
 
@@ -205,20 +208,30 @@ const displayMessage = (text, sender, file = null) => {
     } else {
         messageContainer.className = `flex items-end gap-3 ${sender === 'user' ? 'justify-end' : ''}`;
         if (text) {
-            // Process markdown for code blocks
-            let processedText = text.replace(/</g, "&lt;").replace(/>/g, "&gt;");
-            processedText = processedText.replace(/```(\w*)\n([\s\S]*?)```/g, (match, lang, code) => {
-                const language = lang || 'code';
-                // Need to handle the code separately to avoid it being wrapped in a div that breaks the layout
-                return `</div></div><div class="w-full my-2"><div class="markdown-box">
-                    <div class="code-header">
-                        <span>${language}</span>
-                        <button class="copy-btn"><i class="far fa-copy mr-1"></i> Salin</button>
-                    </div>
-                    <pre><code>${code.trim()}</code></pre>
-                </div></div><div class="flex items-end gap-3 ${sender === 'user' ? 'justify-end' : ''}"><div class="text-sm">`;
-            });
-            contentHTML += `<div class="text-sm">${processedText}</div>`;
+            const parts = text.split(/(```(?:\w*)\n[\s\S]*?\n```)/g);
+            let finalHTML = '';
+            for (const part of parts) {
+                if (part.startsWith('```')) {
+                    const codeBlockMatch = part.match(/```(\w*)\n([\s\S]*?)\n```/);
+                    if (codeBlockMatch) {
+                        const [, lang, code] = codeBlockMatch;
+                        const language = lang || 'code';
+                        const escapedCode = code.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+                        finalHTML += `
+                        </div></div></div><div class="w-full my-1"><div class="markdown-box">
+                            <div class="code-header">
+                                <span>${language}</span>
+                                <button class="copy-btn"><i class="far fa-copy mr-1"></i> Salin</button>
+                            </div>
+                            <pre><code>${escapedCode.trim()}</code></pre>
+                        </div></div><div><div><div class="text-sm">
+                        `;
+                    }
+                } else {
+                    finalHTML += part.replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, '<br>');
+                }
+            }
+            contentHTML += `<div class="text-sm">${finalHTML}</div>`;
         }
     }
 
@@ -242,7 +255,6 @@ const displayMessage = (text, sender, file = null) => {
     chatWindow.appendChild(messageContainer);
     chatWindow.scrollTop = chatWindow.scrollHeight;
 
-    // Add event listeners for any new copy buttons
     messageContainer.querySelectorAll('.copy-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             const code = btn.closest('.markdown-box').querySelector('pre code').textContent;
