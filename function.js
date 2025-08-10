@@ -15,8 +15,16 @@ const commandSuggestions = document.getElementById('command-suggestions');
 const submitButton = document.getElementById('submit-button');
 const backgroundAudio = document.getElementById('background-audio');
 
+// --- Template Selection ---
+const userMessageTemplate = document.getElementById('user-message-template');
+const aiMessageTemplate = document.getElementById('ai-message-template');
+const systemMessageTemplate = document.getElementById('system-message-template');
+const typingIndicatorTemplate = document.getElementById('typing-indicator-template');
+
 // --- API, State, and Music Management ---
-const API_KEY = 'AIzaSyADD8GLekHkXmtt7nFanPXiU6VFMw6UdB8'; // Your Gemini API Key
+const API_KEY = 'AIzaSyA0xg5Q3rfbS_amXM5wfghAvyPjAOviBIg';
+const MODEL_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${API_KEY}`;
+
 let conversationHistory = [];
 let attachedFile = null;
 const songs = [
@@ -25,13 +33,11 @@ const songs = [
 ];
 let currentSong = {};
 
-// --- Initial Setup for Audio and Music Selection ---
+// --- Initial Setup ---
 document.addEventListener('DOMContentLoaded', () => {
-    // 1. Randomly select a song
     currentSong = songs[Math.floor(Math.random() * songs.length)];
     backgroundAudio.src = currentSong.url;
 
-    // 2. Create an overlay to ask for user interaction to play audio
     const overlay = document.createElement('div');
     overlay.id = 'audio-overlay';
     overlay.style.cssText = 'position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.85); color: white; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; z-index: 100; cursor: pointer; backdrop-filter: blur(5px);';
@@ -44,11 +50,13 @@ document.addEventListener('DOMContentLoaded', () => {
     `;
     document.body.appendChild(overlay);
 
-    // 3. Play music and remove overlay on click
     overlay.addEventListener('click', () => {
         backgroundAudio.play().catch(e => console.error("Gagal memutar audio:", e));
         overlay.style.display = 'none';
     }, { once: true });
+    
+    const initialMessage = "Halo! Saya adalah asisten AI yang terhubung dengan Gemini. Apa yang bisa saya bantu hari ini? Ketik <code class='bg-gray-700/80 px-1 rounded-sm'>/</code> untuk melihat perintah.";
+    displayMessage(initialMessage, 'ai');
 });
 
 
@@ -69,18 +77,12 @@ const fileToGenerativePart = (file) => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onloadend = () => {
-      resolve({
-        inlineData: {
-          mimeType: file.type,
-          data: reader.result.split(',')[1]
-        }
-      });
+      resolve({ inlineData: { mimeType: file.type, data: reader.result.split(',')[1] } });
     };
     reader.onerror = reject;
     reader.readAsDataURL(file);
   });
 };
-
 
 // --- Core Functions ---
 const handleUserInput = async (text, file = null) => {
@@ -107,41 +109,33 @@ const handleUserInput = async (text, file = null) => {
 const handleCommand = (command) => {
     const [cmd] = command.trim().split(' ');
 
-    switch (cmd) {
-        case '/credits':
-            const creditsHTML = `
-                <div class="p-3 border border-green-500/30 rounded-lg bg-gray-800/50 backdrop-blur-sm">
-                    <p class="font-bold text-green-400 text-base mb-3">Credits & Info</p>
-                    <div class="text-sm space-y-2 text-gray-300">
-                        <p><i class="fas fa-code w-5 mr-2 text-gray-400"></i>UI by LanaVyn with JS & TailwindCSS.</p>
-                        <p><i class="fas fa-brain w-5 mr-2 text-gray-400"></i>AI powered by Google Gemini.</p>
-                        <p><i class="fas fa-music w-5 mr-2 text-gray-400"></i>Now Playing: <strong>${currentSong.title || 'Music'}</strong></p>
-                        <div class="flex items-center pt-2 border-t border-gray-700/50 mt-3">
-                            <i class="fab fa-whatsapp w-5 mr-2 text-gray-400"></i>
-                            <a href="https://wa.me/6285971105030" target="_blank" class="text-cyan-400 hover:underline">6285971105030</a>
-                            <button class="js-copy-btn ml-auto text-xs bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded transition-colors" data-copy="6285971105030">Salin</button>
-                        </div>
+    if (cmd === '/credits') {
+        const creditsHTML = `
+            <div class="p-3 border border-green-500/30 rounded-lg bg-gray-800/50 backdrop-blur-sm">
+                <p class="font-bold text-green-400 text-base mb-3">Credits & Info</p>
+                <div class="text-sm space-y-2 text-gray-300">
+                    <p><i class="fas fa-code w-5 mr-2 text-gray-400"></i>UI by LanaVyn with JS & TailwindCSS.</p>
+                    <p><i class="fas fa-brain w-5 mr-2 text-gray-400"></i>AI powered by Google Gemini.</p>
+                    <p><i class="fas fa-music w-5 mr-2 text-gray-400"></i>Now Playing: <strong>${currentSong.title || 'Music'}</strong></p>
+                    <div class="flex items-center pt-2 border-t border-gray-700/50 mt-3">
+                        <i class="fab fa-whatsapp w-5 mr-2 text-gray-400"></i>
+                        <a href="https://wa.me/6285971105030" target="_blank" class="text-cyan-400 hover:underline">6285971105030</a>
+                        <button class="js-copy-btn ml-auto text-xs bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded transition-colors" data-copy="6285971105030">Salin</button>
                     </div>
                 </div>
-            `;
-            displayMessage(creditsHTML, 'system');
-            break;
-        default:
-            displayMessage(`Perintah tidak dikenal: ${cmd}`, 'system');
+            </div>
+        `;
+        displayMessage(creditsHTML, 'system');
+    } else {
+        displayMessage(`Perintah tidak dikenal: ${cmd}`, 'system');
     }
 };
 
 const getAIResponse = async (prompt, file) => {
     displayTypingIndicator();
-
-    // FIXED: Correct model names for v1beta API
-    const model = file ? 'gemini-pro-vision' : 'gemini-pro';
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${API_KEY}`;
     
     const userParts = [];
-    if (prompt) {
-        userParts.push({ text: prompt });
-    }
+    if (prompt) userParts.push({ text: prompt });
     if (file) {
         try {
             const imagePart = await fileToGenerativePart(file);
@@ -157,7 +151,7 @@ const getAIResponse = async (prompt, file) => {
     const contents = [...conversationHistory, { role: 'user', parts: userParts }];
 
     try {
-        const response = await fetch(url, {
+        const response = await fetch(MODEL_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ contents })
@@ -170,7 +164,7 @@ const getAIResponse = async (prompt, file) => {
 
         const data = await response.json();
         
-        if (data.candidates && data.candidates.length > 0 && data.candidates[0].content && data.candidates[0].content.parts) {
+        if (data.candidates && data.candidates[0].content?.parts) {
             const aiResponseText = data.candidates[0].content.parts.map(p => p.text).join("");
             displayMessage(aiResponseText, 'ai');
             
@@ -193,31 +187,31 @@ const getAIResponse = async (prompt, file) => {
 
 // --- UI Display Functions ---
 const displayMessage = (text, sender, file = null) => {
-    const messageContainer = document.createElement('div');
-    let contentHTML = '';
+    const template = sender === 'user' ? userMessageTemplate : sender === 'ai' ? aiMessageTemplate : systemMessageTemplate;
+    const messageClone = template.content.cloneNode(true);
+    const contentContainer = messageClone.querySelector('.message-content');
+    
+    let finalHTML = '';
 
     if (file && sender === 'user') {
         const fileURL = URL.createObjectURL(file);
-        contentHTML += `<img src="${fileURL}" alt="Uploaded Image" class="max-w-xs rounded-lg mb-2 cursor-pointer" onclick="window.open('${fileURL}')">`;
+        finalHTML += `<img src="${fileURL}" alt="Uploaded Image" class="max-w-xs rounded-lg mb-2 cursor-pointer" onclick="window.open('${fileURL}')">`;
     }
 
-    if (sender === 'system') {
-        messageContainer.className = 'w-full my-2';
-        contentHTML = text; 
-    } else {
-        messageContainer.className = `flex items-end gap-3 ${sender === 'user' ? 'justify-end' : ''}`;
-        if (text) {
+    if (text) {
+        if (sender === 'system') {
+            finalHTML += text;
+        } else {
             const parts = text.split(/(```\w*\n[\s\S]*?\n```)/g);
-            let finalHTML = '';
-            for (const part of parts) {
+            parts.forEach(part => {
                 if (part.startsWith('```')) {
-                    const codeBlockMatch = part.match(/```(\w*)\n([\s\S]*?)\n```/);
-                    if (codeBlockMatch) {
-                        const [, lang, code] = codeBlockMatch;
+                    const match = part.match(/```(\w*)\n([\s\S]*?)\n```/);
+                    if (match) {
+                        const [, lang, code] = match;
                         const language = lang || 'code';
                         const escapedCode = code.replace(/</g, "&lt;").replace(/>/g, "&gt;");
                         finalHTML += `
-                        <div class="markdown-box w-full my-2">
+                        <div class="markdown-box">
                             <div class="code-header">
                                 <span>${language}</span>
                                 <button class="copy-btn"><i class="far fa-copy mr-1"></i> Salin</button>
@@ -225,64 +219,37 @@ const displayMessage = (text, sender, file = null) => {
                             <pre><code>${escapedCode.trim()}</code></pre>
                         </div>`;
                     }
-                } else if (part.trim()) {
-                    finalHTML += `<p class="text-sm">${part.replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, '<br>')}</p>`;
+                } else if (part.trim()){
+                    finalHTML += `<p class="text-sm">${part.replace(/\n/g, '<br>')}</p>`;
                 }
-            }
-            contentHTML += finalHTML;
+            });
         }
     }
 
-    const messageBody = sender === 'user' ? `
-        <div class="bg-blue-600 p-3 rounded-lg rounded-br-none max-w-lg text-white">
-            ${contentHTML}
-        </div>
-        <div class="flex-shrink-0 w-8 h-8 rounded-full bg-gray-600 flex items-center justify-center">
-            <i class="fas fa-user text-white"></i>
-        </div>` 
-    : sender === 'ai' ? `
-        <div class="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center">
-            <i class="fas fa-robot text-white"></i>
-        </div>
-        <div class="bg-gray-800/80 backdrop-blur-sm p-3 rounded-lg rounded-bl-none max-w-lg">
-            ${contentHTML}
-        </div>` 
-    : `<div class="text-xs text-gray-400">${contentHTML}</div>`;
+    contentContainer.innerHTML = finalHTML;
+    chatWindow.appendChild(messageClone);
     
-    messageContainer.innerHTML = messageBody;
-    chatWindow.appendChild(messageContainer);
-    chatWindow.scrollTop = chatWindow.scrollHeight;
-
-    messageContainer.querySelectorAll('.copy-btn').forEach(btn => {
+    chatWindow.querySelectorAll('.copy-btn:not(.listener-added)').forEach(btn => {
+        btn.classList.add('listener-added');
         btn.addEventListener('click', () => {
             const code = btn.closest('.markdown-box').querySelector('pre code').textContent;
             copyToClipboard(code, btn);
         });
     });
-    messageContainer.querySelectorAll('.js-copy-btn').forEach(btn => {
+     chatWindow.querySelectorAll('.js-copy-btn:not(.listener-added)').forEach(btn => {
+        btn.classList.add('listener-added');
         btn.addEventListener('click', () => {
             copyToClipboard(btn.dataset.copy, btn);
         });
     });
+
+    chatWindow.scrollTop = chatWindow.scrollHeight;
 };
 
 const displayTypingIndicator = () => {
     if (document.getElementById('typing-indicator')) return;
-    const typingIndicator = document.createElement('div');
-    typingIndicator.id = 'typing-indicator';
-    typingIndicator.className = 'flex items-end gap-3';
-    typingIndicator.innerHTML = `
-        <div class="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center">
-            <i class="fas fa-robot text-white"></i>
-        </div>
-        <div class="bg-gray-800/80 backdrop-blur-sm p-3 rounded-lg rounded-bl-none">
-            <div class="flex items-center gap-1.5">
-                <span class="w-2 h-2 bg-gray-400 rounded-full animate-pulse" style="animation-delay: 0s;"></span>
-                <span class="w-2 h-2 bg-gray-400 rounded-full animate-pulse" style="animation-delay: 0.2s;"></span>
-                <span class="w-2 h-2 bg-gray-400 rounded-full animate-pulse" style="animation-delay: 0.4s;"></span>
-            </div>
-        </div>`;
-    chatWindow.appendChild(typingIndicator);
+    const indicator = typingIndicatorTemplate.content.cloneNode(true);
+    chatWindow.appendChild(indicator);
     chatWindow.scrollTop = chatWindow.scrollHeight;
 };
 
