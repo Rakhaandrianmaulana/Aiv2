@@ -14,6 +14,7 @@ const suggestionButtons = document.getElementById('suggestion-buttons');
 const commandSuggestions = document.getElementById('command-suggestions');
 const submitButton = document.getElementById('submit-button');
 const backgroundAudio = document.getElementById('background-audio');
+const themeToggleButton = document.getElementById('theme-toggle');
 
 // --- Template Selection ---
 const userMessageTemplate = document.getElementById('user-message-template');
@@ -29,41 +30,29 @@ const MODEL_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemin
 let conversationHistory = [];
 let attachedFile = null;
 let aiPersona = "Anda adalah Asisten AI Canggih v2. Anda sangat membantu, ramah, dan selalu memberikan jawaban yang jelas. Anda tahu bahwa Anda dapat mengubah kepribadian Anda jika pengguna memintanya dengan perintah /persona.";
-let activeClockIntervals = []; // To manage multiple clock instances
+let activeClockIntervals = [];
 
 const songs = [
-    { title: "Mitty Zasia - Sesuatu di Jogja", url: "[https://files.catbox.moe/3yeu0x.mp3](https://files.catbox.moe/3yeu0x.mp3)" },
-    { title: "Andra and The BackBone - Sempurna", url: "[https://files.catbox.moe/xcpioq.mp3](https://files.catbox.moe/xcpioq.mp3)" }
+    { title: "Mitty Zasia - Sesuatu di Jogja", url: "https://files.catbox.moe/3yeu0x.mp3" },
+    { title: "Andra and The BackBone - Sempurna", url: "https://files.catbox.moe/xcpioq.mp3" }
 ];
 let currentSong = {};
 
-// --- V2.3 Feature: Rate Limiting & Banning ---
+// --- V2.4 Feature: Rate Limiting & Banning ---
 const RATE_LIMIT_COUNT = 10;
-const RATE_LIMIT_WINDOW = 60 * 1000; // 60 seconds
-const BAN_DURATION = 24 * 60 * 60 * 1000; // 24 hours
+const RATE_LIMIT_WINDOW = 60 * 1000;
+const BAN_DURATION = 24 * 60 * 60 * 1000;
 let messageTimestamps = [];
 
-// --- V2.3 Feature: Update Log ---
+// --- V2.4 Feature: Update Log ---
 const updateLog = [
     {
+        version: "2.4", date: "28 Agustus 2025",
+        features: ["<strong>Sistem Tema Ganda:</strong> Menambahkan pilihan antara Light Mode dan Dark Mode yang dapat diubah kapan saja.", "<strong>Penyimpanan Tema:</strong> Pilihan tema pengguna akan disimpan di browser dan dimuat secara otomatis pada kunjungan berikutnya."]
+    },
+    {
         version: "2.3", date: "27 Agustus 2025",
-        features: ["<strong>Sistem Anti-Spam:</strong> Menerapkan limit 10 pesan/menit. Jika terlampaui, pengguna akan diblokir selama 24 jam.", "<strong>Perintah Unban:</strong> Menambahkan perintah admin <code>/unban [password]</code> untuk membuka blokir.", "<strong>Perbaikan Bug Kritis:</strong> Memperbaiki bug scroll pada fitur jam dan memastikan perintah dieksekusi tanpa sisa teks di input."]
-    },
-    {
-        version: "2.2", date: "26 Agustus 2025",
-        features: ["Memperbaiki jam yang tidak berjalan real-time, memastikan saran pertanyaan hilang setelah digunakan, dan melengkapi catatan /infoupdate."]
-    },
-    {
-        version: "2.1", date: "25 Agustus 2025",
-        features: ["Implementasi awal perintah <code>/time</code> untuk menampilkan waktu di berbagai negara."]
-    },
-    {
-        version: "2.0", date: "24 Agustus 2025",
-        features: ["Sistem Persona AI dengan <code>/persona</code>.", "Log Pembaruan dengan <code>/infoupdate</code>.", "Migrasi ke model Gemini 1.5 Flash."]
-    },
-    {
-        version: "1.0", date: "23 Agustus 2025",
-        features: ["Rilis Awal: Chat dasar, analisis gambar, dan musik latar acak."]
+        features: ["<strong>Sistem Anti-Spam:</strong> Menerapkan limit 10 pesan/menit.", "<strong>Perintah Unban:</strong> Menambahkan perintah admin <code>/unban [password]</code>.", "<strong>Perbaikan Bug Kritis:</strong> Memperbaiki bug scroll pada fitur jam dan eksekusi perintah."]
     }
 ];
 
@@ -84,9 +73,10 @@ document.addEventListener('DOMContentLoaded', () => {
         overlay.style.display = 'none';
     }, { once: true });
     
-    const initialMessage = "Selamat datang di Asisten AI v2.3! Sistem anti-spam telah ditambahkan. Coba <code>/time</code> untuk melihat jam real-time yang berfungsi penuh.";
+    const initialMessage = "Selamat datang di Asisten AI v2.4! Kini hadir dengan Light & Dark Mode. Klik ikon ☀️/🌙 di atas untuk berganti tema.";
     displayMessage(initialMessage, 'ai');
     checkBanStatus();
+    loadTheme();
 });
 
 
@@ -118,7 +108,6 @@ const handleUserInput = async (text, file = null) => {
     messageInput.disabled = true;
 
     if (text.startsWith('/')) {
-        // BUG FIXED: Command text is not shown in chat, only its output.
         handleCommand(text);
     } else {
         if (text || file) {
@@ -131,7 +120,6 @@ const handleUserInput = async (text, file = null) => {
     
     messageInput.value = '';
     removeFile();
-    // Re-enable form only if not banned
     if (!checkBanStatus()) {
         submitButton.disabled = false;
         messageInput.disabled = false;
@@ -302,11 +290,11 @@ const removeFile = () => {
     previewImage.src = '';
 };
 
-// --- V2.3 Feature: Real-Time Clock & Banning Logic ---
+// --- V2.4 Features: Clock & Banning & Theme ---
 const createTimezoneButton = (country, timezone) => `<button class="timezone-btn bg-gray-700 hover:bg-purple-600 text-sm font-medium py-2 px-4 rounded-full transition-colors duration-200" data-timezone="${timezone}" data-country="${country}">${country}</button>`;
 
 const displayRealTimeClock = (country, timezone) => {
-    const clockContainer = displayMessage('', 'system'); // Create an empty system message container
+    const clockContainer = displayMessage('', 'system');
     const clockInstance = clockDisplayTemplate.content.cloneNode(true);
     clockInstance.querySelector('.country-name').textContent = country;
     const timeDisplayEl = clockInstance.querySelector('.time-display');
@@ -321,7 +309,7 @@ const displayRealTimeClock = (country, timezone) => {
     activeClockIntervals.push(intervalId);
 
     contentContainer.appendChild(clockInstance);
-    chatWindow.scrollTop = chatWindow.scrollHeight; // BUG FIXED: Scroll to bottom after adding clock
+    chatWindow.scrollTop = chatWindow.scrollHeight;
 };
 
 const checkRateLimit = () => {
@@ -335,7 +323,7 @@ const checkRateLimit = () => {
 const banUser = () => {
     const banExpires = Date.now() + BAN_DURATION;
     localStorage.setItem('aiAsistenBan', banExpires);
-    checkBanStatus(); // Immediately apply ban UI
+    checkBanStatus();
 };
 
 const unbanUser = () => {
@@ -353,12 +341,34 @@ const checkBanStatus = () => {
         messageInput.disabled = true;
         const timeLeft = Math.round((banExpires - Date.now()) / (1000 * 60 * 60));
         messageInput.placeholder = `Anda diblokir karena spam. Sisa waktu: ${timeLeft} jam.`;
-        return true; // Is banned
+        return true;
     } else if (banExpires) {
-        unbanUser(); // Ban expired, automatically unban
+        unbanUser();
     }
-    return false; // Not banned
+    return false;
 };
+
+const loadTheme = () => {
+    const theme = localStorage.getItem('theme') || 'dark';
+    const icon = themeToggleButton.querySelector('i');
+    if (theme === 'light') {
+        document.body.classList.add('light-theme');
+        icon.classList.remove('fa-sun');
+        icon.classList.add('fa-moon');
+    } else {
+        document.body.classList.remove('light-theme');
+        icon.classList.remove('fa-moon');
+        icon.classList.add('fa-sun');
+    }
+};
+
+const toggleTheme = () => {
+    document.body.classList.toggle('light-theme');
+    const isLight = document.body.classList.contains('light-theme');
+    localStorage.setItem('theme', isLight ? 'light' : 'dark');
+    loadTheme();
+};
+
 
 // --- Event Listeners Setup ---
 messageForm.addEventListener('submit', (e) => {
@@ -394,10 +404,9 @@ commandSuggestions.addEventListener('click', (e) => {
     const item = e.target.closest('.suggestion-item');
     if (item) {
         const command = item.dataset.command.trim();
-        // BUG FIXED: Immediately execute command without populating input
         handleUserInput(command);
         commandSuggestions.classList.add('hidden');
-        messageInput.value = ''; // Clear input after selection
+        messageInput.value = '';
     }
 });
 
@@ -408,3 +417,5 @@ chatWindow.addEventListener('click', (e) => {
         target.closest('.message-content').remove();
     }
 });
+
+themeToggleButton.addEventListener('click', toggleTheme);
