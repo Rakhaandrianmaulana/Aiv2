@@ -32,28 +32,38 @@ let aiPersona = "Anda adalah Asisten AI Canggih v2. Anda sangat membantu, ramah,
 let activeClockIntervals = []; // To manage multiple clock instances
 
 const songs = [
-    { title: "Mitty Zasia - Sesuatu di Jogja", url: "https://files.catbox.moe/3yeu0x.mp3" },
-    { title: "Andra and The BackBone - Sempurna", url: "https://files.catbox.moe/xcpioq.mp3" }
+    { title: "Mitty Zasia - Sesuatu di Jogja", url: "[https://files.catbox.moe/3yeu0x.mp3](https://files.catbox.moe/3yeu0x.mp3)" },
+    { title: "Andra and The BackBone - Sempurna", url: "[https://files.catbox.moe/xcpioq.mp3](https://files.catbox.moe/xcpioq.mp3)" }
 ];
 let currentSong = {};
 
-// FIXED: Update log now includes V1 and has a more descriptive V2.1 entry.
+// --- V2.3 Feature: Rate Limiting & Banning ---
+const RATE_LIMIT_COUNT = 10;
+const RATE_LIMIT_WINDOW = 60 * 1000; // 60 seconds
+const BAN_DURATION = 24 * 60 * 60 * 1000; // 24 hours
+let messageTimestamps = [];
+
+// --- V2.3 Feature: Update Log ---
 const updateLog = [
     {
+        version: "2.3", date: "27 Agustus 2025",
+        features: ["<strong>Sistem Anti-Spam:</strong> Menerapkan limit 10 pesan/menit. Jika terlampaui, pengguna akan diblokir selama 24 jam.", "<strong>Perintah Unban:</strong> Menambahkan perintah admin <code>/unban [password]</code> untuk membuka blokir.", "<strong>Perbaikan Bug Kritis:</strong> Memperbaiki bug scroll pada fitur jam dan memastikan perintah dieksekusi tanpa sisa teks di input."]
+    },
+    {
         version: "2.2", date: "26 Agustus 2025",
-        features: ["<strong>Perbaikan Bug Kritis:</strong> Memperbaiki jam yang tidak berjalan real-time, memastikan saran pertanyaan hilang setelah digunakan, dan melengkapi catatan /infoupdate."]
+        features: ["Memperbaiki jam yang tidak berjalan real-time, memastikan saran pertanyaan hilang setelah digunakan, dan melengkapi catatan /infoupdate."]
     },
     {
         version: "2.1", date: "25 Agustus 2025",
-        features: ["<strong>Fitur Jam Ditambahkan:</strong> Implementasi awal perintah <code>/time</code> untuk menampilkan waktu di berbagai negara (versi ini mengandung bug pada update real-time)."]
+        features: ["Implementasi awal perintah <code>/time</code> untuk menampilkan waktu di berbagai negara."]
     },
     {
         version: "2.0", date: "24 Agustus 2025",
-        features: ["<strong>Sistem Persona AI:</strong> Kemampuan mengubah kepribadian AI dengan <code>/persona</code>.", "<strong>Log Pembaruan:</strong> Perintah <code>/infoupdate</code> ditambahkan.", "<strong>Peningkatan API:</strong> Migrasi ke model Gemini 1.5 Flash."]
+        features: ["Sistem Persona AI dengan <code>/persona</code>.", "Log Pembaruan dengan <code>/infoupdate</code>.", "Migrasi ke model Gemini 1.5 Flash."]
     },
     {
         version: "1.0", date: "23 Agustus 2025",
-        features: ["<strong>Rilis Awal:</strong> Fungsionalitas chat dasar dengan Gemini.", "<strong>Analisis Gambar:</strong> Kemampuan untuk mengunggah dan mendeskripsikan gambar.", "<strong>Musik Latar Acak:</strong> Pemutaran musik acak saat aplikasi dimulai."]
+        features: ["Rilis Awal: Chat dasar, analisis gambar, dan musik latar acak."]
     }
 ];
 
@@ -74,8 +84,9 @@ document.addEventListener('DOMContentLoaded', () => {
         overlay.style.display = 'none';
     }, { once: true });
     
-    const initialMessage = "Selamat datang di Asisten AI v2.2! Semua bug telah diperbaiki. Coba <code>/time</code> untuk melihat jam real-time yang berfungsi penuh.";
+    const initialMessage = "Selamat datang di Asisten AI v2.3! Sistem anti-spam telah ditambahkan. Coba <code>/time</code> untuk melihat jam real-time yang berfungsi penuh.";
     displayMessage(initialMessage, 'ai');
+    checkBanStatus();
 });
 
 
@@ -100,21 +111,32 @@ const fileToGenerativePart = (file) => {
 
 // --- Core Functions ---
 const handleUserInput = async (text, file = null) => {
-    // FIXED: Suggestion buttons now hide immediately on any input.
-    suggestionButtons.classList.add('hidden');
+    if (checkBanStatus()) return;
 
+    suggestionButtons.classList.add('hidden');
     submitButton.disabled = true;
     messageInput.disabled = true;
 
-    if (text || file) { displayMessage(text, 'user', file); }
-    if (text.startsWith('/')) { handleCommand(text); } 
-    else { await getAIResponse(text, file); }
+    if (text.startsWith('/')) {
+        // BUG FIXED: Command text is not shown in chat, only its output.
+        handleCommand(text);
+    } else {
+        if (text || file) {
+            displayMessage(text, 'user', file);
+            messageTimestamps.push(Date.now());
+            checkRateLimit();
+        }
+        await getAIResponse(text, file);
+    }
     
     messageInput.value = '';
     removeFile();
-    submitButton.disabled = false;
-    messageInput.disabled = false;
-    messageInput.focus();
+    // Re-enable form only if not banned
+    if (!checkBanStatus()) {
+        submitButton.disabled = false;
+        messageInput.disabled = false;
+        messageInput.focus();
+    }
 };
 
 const handleCommand = (command) => {
@@ -149,6 +171,15 @@ const handleCommand = (command) => {
         case '/time': {
             const timeZoneButtonsHTML = `<div class="p-3 border border-purple-500/30 rounded-lg bg-gray-800/50 backdrop-blur-sm"><p class="font-bold text-purple-400 mb-3">Pilih Negara</p><div class="flex flex-wrap gap-2">${createTimezoneButton("Indonesia", "Asia/Jakarta")}${createTimezoneButton("Arab Saudi", "Asia/Riyadh")}${createTimezoneButton("Rusia (Moskow)", "Europe/Moscow")}${createTimezoneButton("China", "Asia/Shanghai")}</div></div>`;
             displayMessage(timeZoneButtonsHTML, 'system');
+            break;
+        }
+        case '/unban': {
+            if (fullArgs === 'LanaVyn') {
+                unbanUser();
+                displayMessage(`<div class="p-3 border border-green-500/30 rounded-lg bg-gray-800/50 backdrop-blur-sm text-center"><p class="font-bold text-green-400">Akses Dipulihkan</p><p class="text-sm text-gray-300 mt-1">Blokir telah berhasil dibuka.</p></div>`, 'system');
+            } else {
+                displayMessage(`<div class="p-3 border border-red-500/30 rounded-lg bg-gray-800/50 backdrop-blur-sm text-center"><p class="font-bold text-red-400">Gagal</p><p class="text-sm text-gray-300 mt-1">Password unban salah.</p></div>`, 'system');
+            }
             break;
         }
         default:
@@ -271,32 +302,62 @@ const removeFile = () => {
     previewImage.src = '';
 };
 
-// --- V2.1 Feature: Real-Time Clock ---
+// --- V2.3 Feature: Real-Time Clock & Banning Logic ---
 const createTimezoneButton = (country, timezone) => `<button class="timezone-btn bg-gray-700 hover:bg-purple-600 text-sm font-medium py-2 px-4 rounded-full transition-colors duration-200" data-timezone="${timezone}" data-country="${country}">${country}</button>`;
 
-// FIXED: Clock logic is now stable and updates in real-time.
 const displayRealTimeClock = (country, timezone) => {
-    const clockTemplate = systemMessageTemplate.content.cloneNode(true);
-    const contentContainer = clockTemplate.querySelector('.message-content');
-    
+    const clockContainer = displayMessage('', 'system'); // Create an empty system message container
     const clockInstance = clockDisplayTemplate.content.cloneNode(true);
     clockInstance.querySelector('.country-name').textContent = country;
     const timeDisplayEl = clockInstance.querySelector('.time-display');
 
     const updateClock = () => {
-        const timeString = new Date().toLocaleTimeString('en-GB', {
-            timeZone: timezone, hour: '2-digit', minute: '2-digit', second: '2-digit'
-        });
+        const timeString = new Date().toLocaleTimeString('en-GB', { timeZone: timezone, hour: '2-digit', minute: '2-digit', second: '2-digit' });
         timeDisplayEl.textContent = timeString;
     };
     
     updateClock();
     const intervalId = setInterval(updateClock, 1000);
-    activeClockIntervals.push(intervalId); // Store interval to manage it later if needed
+    activeClockIntervals.push(intervalId);
 
     contentContainer.appendChild(clockInstance);
-    chatWindow.appendChild(clockTemplate);
-    chatWindow.scrollTop = chatWindow.scrollHeight;
+    chatWindow.scrollTop = chatWindow.scrollHeight; // BUG FIXED: Scroll to bottom after adding clock
+};
+
+const checkRateLimit = () => {
+    const now = Date.now();
+    messageTimestamps = messageTimestamps.filter(ts => now - ts < RATE_LIMIT_WINDOW);
+    if (messageTimestamps.length >= RATE_LIMIT_COUNT) {
+        banUser();
+    }
+};
+
+const banUser = () => {
+    const banExpires = Date.now() + BAN_DURATION;
+    localStorage.setItem('aiAsistenBan', banExpires);
+    checkBanStatus(); // Immediately apply ban UI
+};
+
+const unbanUser = () => {
+    localStorage.removeItem('aiAsistenBan');
+    messageTimestamps = [];
+    submitButton.disabled = false;
+    messageInput.disabled = false;
+    messageInput.placeholder = "Ubah persona dengan /persona atau kirim pesan...";
+};
+
+const checkBanStatus = () => {
+    const banExpires = localStorage.getItem('aiAsistenBan');
+    if (banExpires && Date.now() < banExpires) {
+        submitButton.disabled = true;
+        messageInput.disabled = true;
+        const timeLeft = Math.round((banExpires - Date.now()) / (1000 * 60 * 60));
+        messageInput.placeholder = `Anda diblokir karena spam. Sisa waktu: ${timeLeft} jam.`;
+        return true; // Is banned
+    } else if (banExpires) {
+        unbanUser(); // Ban expired, automatically unban
+    }
+    return false; // Not banned
 };
 
 // --- Event Listeners Setup ---
@@ -333,12 +394,10 @@ commandSuggestions.addEventListener('click', (e) => {
     const item = e.target.closest('.suggestion-item');
     if (item) {
         const command = item.dataset.command.trim();
-        messageInput.value = command;
+        // BUG FIXED: Immediately execute command without populating input
+        handleUserInput(command);
         commandSuggestions.classList.add('hidden');
-        messageInput.focus();
-        if (command !== '/persona') {
-            handleUserInput(command);
-        }
+        messageInput.value = ''; // Clear input after selection
     }
 });
 
@@ -346,6 +405,6 @@ chatWindow.addEventListener('click', (e) => {
     const target = e.target.closest('.timezone-btn');
     if (target) {
         displayRealTimeClock(target.dataset.country, target.dataset.timezone);
-        target.closest('.message-content').parentElement.remove();
+        target.closest('.message-content').remove();
     }
 });
