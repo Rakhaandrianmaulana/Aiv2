@@ -20,6 +20,7 @@ const userMessageTemplate = document.getElementById('user-message-template');
 const aiMessageTemplate = document.getElementById('ai-message-template');
 const systemMessageTemplate = document.getElementById('system-message-template');
 const typingIndicatorTemplate = document.getElementById('typing-indicator-template');
+const clockDisplayTemplate = document.getElementById('clock-display-template');
 
 // --- API, State, and Music Management ---
 const API_KEY = 'AIzaSyA0xg5Q3rfbS_amXM5wfghAvyPjAOviBIg';
@@ -35,29 +36,16 @@ const songs = [
 ];
 let currentSong = {};
 
-// --- V2 Feature: Update Log ---
 const updateLog = [
     {
-        version: "2.0",
-        date: "24 Agustus 2025",
-        features: [
-            "<strong>Sistem Persona AI:</strong> Kemampuan untuk mengubah kepribadian AI secara dinamis menggunakan perintah <code>/persona [deskripsi]</code> untuk mendukung mode roleplay.",
-            "<strong>Log Pembaruan:</strong> Menambahkan perintah <code>/infoupdate</code> untuk melihat riwayat pembaruan dan fitur baru.",
-            "<strong>Peningkatan API:</strong> Migrasi ke model Gemini 1.5 Flash untuk respons yang lebih cepat dan akurat.",
-            "<strong>Struktur Kode yang Disempurnakan:</strong> Memisahkan template HTML dari logika JavaScript untuk meningkatkan keterbacaan dan pemeliharaan kode."
-        ]
+        version: "2.1", date: "25 Agustus 2025",
+        features: ["<strong>Jam Real-Time:</strong> Menambahkan perintah <code>/time</code> untuk menampilkan jam digital yang berjalan secara live untuk berbagai negara."]
     },
     {
-        version: "1.0",
-        date: "23 Agustus 2025",
-        features: [
-            "Rilis awal dengan fungsionalitas chat dasar.",
-            "Kemampuan analisis gambar.",
-            "Sistem musik latar acak."
-        ]
+        version: "2.0", date: "24 Agustus 2025",
+        features: ["<strong>Sistem Persona AI:</strong> Kemampuan mengubah kepribadian AI dengan <code>/persona</code>.", "<strong>Log Pembaruan:</strong> Perintah <code>/infoupdate</code> ditambahkan.", "<strong>Peningkatan API:</strong> Migrasi ke model Gemini 1.5 Flash."]
     }
 ];
-
 
 // --- Initial Setup ---
 document.addEventListener('DOMContentLoaded', () => {
@@ -67,13 +55,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const overlay = document.createElement('div');
     overlay.id = 'audio-overlay';
     overlay.style.cssText = 'position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.85); color: white; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; z-index: 100; cursor: pointer; backdrop-filter: blur(5px);';
-    overlay.innerHTML = `
-        <div class="p-8 rounded-lg">
-            <h2 class="text-3xl font-bold mb-4">Selamat Datang</h2>
-            <p class="text-lg">Klik di mana saja untuk memulai musik dan masuk.</p>
-            <i class="fas fa-play-circle fa-3x mt-8 animate-pulse"></i>
-        </div>
-    `;
+    overlay.innerHTML = `<div class="p-8 rounded-lg"><h2 class="text-3xl font-bold mb-4">Selamat Datang</h2><p class="text-lg">Klik di mana saja untuk memulai musik dan masuk.</p><i class="fas fa-play-circle fa-3x mt-8 animate-pulse"></i></div>`;
     document.body.appendChild(overlay);
 
     overlay.addEventListener('click', () => {
@@ -81,7 +63,7 @@ document.addEventListener('DOMContentLoaded', () => {
         overlay.style.display = 'none';
     }, { once: true });
     
-    const initialMessage = "Selamat datang di Asisten AI v2! Saya sekarang memiliki sistem persona yang bisa Anda ubah. Coba ketik <code>/persona seorang penyihir tua yang bijaksana</code> atau lihat pembaruan dengan <code>/infoupdate</code>.";
+    const initialMessage = "Selamat datang di Asisten AI v2.1! Saya sekarang memiliki fitur jam real-time. Coba ketik <code>/time</code> untuk melihat waktu di berbagai negara.";
     displayMessage(initialMessage, 'ai');
 });
 
@@ -92,19 +74,14 @@ const copyToClipboard = (text, btnElement) => {
         const originalContent = btnElement.innerHTML;
         btnElement.innerHTML = `<i class="fas fa-check"></i> Disalin!`;
         btnElement.classList.add('copied');
-        setTimeout(() => {
-           btnElement.innerHTML = originalContent;
-           btnElement.classList.remove('copied');
-        }, 2000);
+        setTimeout(() => { btnElement.innerHTML = originalContent; btnElement.classList.remove('copied'); }, 2000);
     });
 };
 
 const fileToGenerativePart = (file) => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onloadend = () => {
-      resolve({ inlineData: { mimeType: file.type, data: reader.result.split(',')[1] } });
-    };
+    reader.onloadend = () => { resolve({ inlineData: { mimeType: file.type, data: reader.result.split(',')[1] } }); };
     reader.onerror = reject;
     reader.readAsDataURL(file);
   });
@@ -115,15 +92,9 @@ const handleUserInput = async (text, file = null) => {
     submitButton.disabled = true;
     messageInput.disabled = true;
 
-    if (text || file) {
-        displayMessage(text, 'user', file);
-    }
-
-    if (text.startsWith('/')) {
-        handleCommand(text);
-    } else {
-        await getAIResponse(text, file);
-    }
+    if (text || file) { displayMessage(text, 'user', file); }
+    if (text.startsWith('/')) { handleCommand(text); } 
+    else { await getAIResponse(text, file); }
     
     messageInput.value = '';
     removeFile();
@@ -138,34 +109,14 @@ const handleCommand = (command) => {
 
     switch (cmd) {
         case '/credits': {
-            const creditsHTML = `
-                <div class="p-3 border border-green-500/30 rounded-lg bg-gray-800/50 backdrop-blur-sm">
-                    <p class="font-bold text-green-400 text-base mb-3">Credits & Info</p>
-                    <div class="text-sm space-y-2 text-gray-300">
-                        <p><i class="fas fa-code w-5 mr-2 text-gray-400"></i>UI by LanaVyn with JS & TailwindCSS.</p>
-                        <p><i class="fas fa-brain w-5 mr-2 text-gray-400"></i>AI powered by Google Gemini.</p>
-                        <p><i class="fas fa-music w-5 mr-2 text-gray-400"></i>Now Playing: <strong>${currentSong.title || 'Music'}</strong></p>
-                        <div class="flex items-center pt-2 border-t border-gray-700/50 mt-3">
-                            <i class="fab fa-whatsapp w-5 mr-2 text-gray-400"></i>
-                            <a href="https://wa.me/6285971105030" target="_blank" class="text-cyan-400 hover:underline">6285971105030</a>
-                            <button class="js-copy-btn ml-auto text-xs bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded transition-colors" data-copy="6285971105030">Salin</button>
-                        </div>
-                    </div>
-                </div>`;
+            const creditsHTML = `<div class="p-3 border border-green-500/30 rounded-lg bg-gray-800/50 backdrop-blur-sm"><p class="font-bold text-green-400 text-base mb-3">Credits & Info</p><div class="text-sm space-y-2 text-gray-300"><p><i class="fas fa-code w-5 mr-2 text-gray-400"></i>UI by LanaVyn with JS & TailwindCSS.</p><p><i class="fas fa-brain w-5 mr-2 text-gray-400"></i>AI powered by Google Gemini.</p><p><i class="fas fa-music w-5 mr-2 text-gray-400"></i>Now Playing: <strong>${currentSong.title || 'Music'}</strong></p><div class="flex items-center pt-2 border-t border-gray-700/50 mt-3"><i class="fab fa-whatsapp w-5 mr-2 text-gray-400"></i><a href="https://wa.me/6285971105030" target="_blank" class="text-cyan-400 hover:underline">6285971105030</a><button class="js-copy-btn ml-auto text-xs bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded transition-colors" data-copy="6285971105030">Salin</button></div></div></div>`;
             displayMessage(creditsHTML, 'system');
             break;
         }
         case '/infoupdate': {
             let updateHTML = '<div class="p-3 border border-blue-500/30 rounded-lg bg-gray-800/50 backdrop-blur-sm">';
             updateLog.forEach(log => {
-                updateHTML += `
-                    <div class="mb-4">
-                        <h3 class="font-bold text-blue-400 text-lg">Versi ${log.version} <span class="text-xs font-normal text-gray-400">- ${log.date}</span></h3>
-                        <ul class="list-disc list-inside text-sm text-gray-300 mt-2 space-y-1">
-                            ${log.features.map(feature => `<li>${feature}</li>`).join('')}
-                        </ul>
-                    </div>
-                `;
+                updateHTML += `<div class="mb-4"><h3 class="font-bold text-blue-400 text-lg">Versi ${log.version} <span class="text-xs font-normal text-gray-400">- ${log.date}</span></h3><ul class="list-disc list-inside text-sm text-gray-300 mt-2 space-y-1">${log.features.map(feature => `<li>${feature}</li>`).join('')}</ul></div>`;
             });
             updateHTML += '</div>';
             displayMessage(updateHTML, 'system');
@@ -174,14 +125,16 @@ const handleCommand = (command) => {
         case '/persona': {
             if (fullArgs) {
                 aiPersona = fullArgs;
-                const confirmationHTML = `<div class="p-3 border border-yellow-500/30 rounded-lg bg-gray-800/50 backdrop-blur-sm text-center">
-                    <p class="font-bold text-yellow-400">Persona AI Diperbarui</p>
-                    <p class="text-sm text-gray-300 mt-1">AI sekarang akan bersikap sebagai: "<strong>${aiPersona}</strong>"</p>
-                </div>`;
+                const confirmationHTML = `<div class="p-3 border border-yellow-500/30 rounded-lg bg-gray-800/50 backdrop-blur-sm text-center"><p class="font-bold text-yellow-400">Persona AI Diperbarui</p><p class="text-sm text-gray-300 mt-1">AI sekarang akan bersikap sebagai: "<strong>${aiPersona}</strong>"</p></div>`;
                 displayMessage(confirmationHTML, 'system');
             } else {
                 displayMessage("Gagal mengubah persona. Harap berikan deskripsi. Contoh: <code>/persona seorang koki dari Italia</code>", 'system');
             }
+            break;
+        }
+        case '/time': {
+            const timeZoneButtonsHTML = `<div class="p-3 border border-purple-500/30 rounded-lg bg-gray-800/50 backdrop-blur-sm"><p class="font-bold text-purple-400 mb-3">Pilih Negara</p><div class="flex flex-wrap gap-2">${createTimezoneButton("Indonesia", "Asia/Jakarta")}${createTimezoneButton("Arab Saudi", "Asia/Riyadh")}${createTimezoneButton("Rusia (Moskow)", "Europe/Moscow")}${createTimezoneButton("China", "Asia/Shanghai")}</div></div>`;
+            displayMessage(timeZoneButtonsHTML, 'system');
             break;
         }
         default:
@@ -207,41 +160,24 @@ const getAIResponse = async (prompt, file) => {
     }
     
     const contents = [...conversationHistory, { role: 'user', parts: userParts }];
-    
-    // V2 Feature: Add System Instruction for Persona
-    const payload = {
-        contents: contents,
-        systemInstruction: {
-            parts: [{ text: aiPersona }]
-        }
-    };
+    const payload = { contents, systemInstruction: { parts: [{ text: aiPersona }] } };
 
     try {
-        const response = await fetch(MODEL_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        });
-
+        const response = await fetch(MODEL_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
         if (!response.ok) {
             const errorData = await response.json();
             throw new Error(errorData.error.message || `HTTP error! status: ${response.status}`);
         }
-
         const data = await response.json();
         
         if (data.candidates && data.candidates[0].content?.parts) {
             const aiResponseText = data.candidates[0].content.parts.map(p => p.text).join("");
             displayMessage(aiResponseText, 'ai');
-            
-            conversationHistory.push({ role: 'user', parts: userParts });
-            conversationHistory.push({ role: 'model', parts: [{ text: aiResponseText }] });
-
+            conversationHistory.push({ role: 'user', parts: userParts }, { role: 'model', parts: [{ text: aiResponseText }] });
         } else {
             const safetyMessage = data.promptFeedback?.blockReason ? `Permintaan diblokir karena: ${data.promptFeedback.blockReason}` : "Maaf, tidak ada respons yang diterima dari AI. Ini mungkin karena filter keamanan.";
             displayMessage(safetyMessage, 'system');
         }
-
     } catch (error) {
         console.error("Error calling Gemini API:", error);
         displayMessage(`Terjadi kesalahan saat menghubungi AI: ${error.message}`, 'system');
@@ -258,12 +194,9 @@ const displayMessage = (text, sender, file = null) => {
     const contentContainer = messageClone.querySelector('.message-content');
     
     let finalHTML = '';
-
     if (file && sender === 'user') {
-        const fileURL = URL.createObjectURL(file);
-        finalHTML += `<img src="${fileURL}" alt="Uploaded Image" class="max-w-xs rounded-lg mb-2 cursor-pointer" onclick="window.open('${fileURL}')">`;
+        finalHTML += `<img src="${URL.createObjectURL(file)}" alt="Uploaded Image" class="max-w-xs rounded-lg mb-2 cursor-pointer" onclick="window.open(this.src)">`;
     }
-
     if (text) {
         if (sender === 'system') {
             finalHTML += text;
@@ -276,14 +209,7 @@ const displayMessage = (text, sender, file = null) => {
                         const [, lang, code] = match;
                         const language = lang || 'code';
                         const escapedCode = code.replace(/</g, "&lt;").replace(/>/g, "&gt;");
-                        finalHTML += `
-                        <div class="markdown-box">
-                            <div class="code-header">
-                                <span>${language}</span>
-                                <button class="copy-btn"><i class="far fa-copy mr-1"></i> Salin</button>
-                            </div>
-                            <pre><code>${escapedCode.trim()}</code></pre>
-                        </div>`;
+                        finalHTML += `<div class="markdown-box"><div class="code-header"><span>${language}</span><button class="copy-btn"><i class="far fa-copy mr-1"></i> Salin</button></div><pre><code>${escapedCode.trim()}</code></pre></div>`;
                     }
                 } else if (part.trim()){
                     finalHTML += `<p class="text-sm">${part.replace(/\n/g, '<br>')}</p>`;
@@ -295,17 +221,11 @@ const displayMessage = (text, sender, file = null) => {
     contentContainer.innerHTML = finalHTML;
     chatWindow.appendChild(messageClone);
     
-    chatWindow.querySelectorAll('.copy-btn:not(.listener-added)').forEach(btn => {
+    chatWindow.querySelectorAll('.copy-btn:not(.listener-added), .js-copy-btn:not(.listener-added)').forEach(btn => {
         btn.classList.add('listener-added');
         btn.addEventListener('click', () => {
-            const code = btn.closest('.markdown-box').querySelector('pre code').textContent;
-            copyToClipboard(code, btn);
-        });
-    });
-     chatWindow.querySelectorAll('.js-copy-btn:not(.listener-added)').forEach(btn => {
-        btn.classList.add('listener-added');
-        btn.addEventListener('click', () => {
-            copyToClipboard(btn.dataset.copy, btn);
+            const textToCopy = btn.classList.contains('js-copy-btn') ? btn.dataset.copy : btn.closest('.markdown-box').querySelector('pre code').textContent;
+            copyToClipboard(textToCopy, btn);
         });
     });
 
@@ -319,9 +239,7 @@ const displayTypingIndicator = () => {
     chatWindow.scrollTop = chatWindow.scrollHeight;
 };
 
-const removeTypingIndicator = () => {
-    document.getElementById('typing-indicator')?.remove();
-};
+const removeTypingIndicator = () => { document.getElementById('typing-indicator')?.remove(); };
 
 const displayFilePreview = (file) => {
     previewImage.src = URL.createObjectURL(file);
@@ -335,6 +253,28 @@ const removeFile = () => {
     fileInput.value = '';
     filePreview.classList.add('hidden');
     previewImage.src = '';
+};
+
+// --- V2.1 Feature: Real-Time Clock ---
+const createTimezoneButton = (country, timezone) => `<button class="timezone-btn bg-gray-700 hover:bg-purple-600 text-sm font-medium py-2 px-4 rounded-full transition-colors duration-200" data-timezone="${timezone}" data-country="${country}">${country}</button>`;
+
+const displayRealTimeClock = (country, timezone) => {
+    const clockClone = clockDisplayTemplate.content.cloneNode(true);
+    const clockContainer = clockClone.querySelector('div');
+    clockClone.querySelector('.country-name').textContent = country;
+    const timeDisplayEl = clockClone.querySelector('.time-display');
+
+    const updateClock = () => {
+        const timeString = new Date().toLocaleTimeString('id-ID', {
+            timeZone: timezone, hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
+        }).replace(/\./g, ':');
+        timeDisplayEl.textContent = timeString;
+    };
+    
+    updateClock(); // Initial display
+    setInterval(updateClock, 1000); // Update every second
+
+    displayMessage(clockContainer.outerHTML, 'system');
 };
 
 // --- Event Listeners Setup ---
@@ -360,11 +300,7 @@ removeFileBtn.addEventListener('click', removeFile);
 suggestionButtons.addEventListener('click', (e) => {
     if (e.target.classList.contains('suggestion-btn')) {
         const suggestionText = e.target.textContent;
-        if (suggestionText.includes('v2')) {
-            handleUserInput('/infoupdate');
-        } else {
-            handleUserInput(suggestionText);
-        }
+        handleUserInput(suggestionText.includes('v2') ? '/infoupdate' : suggestionText);
         suggestionButtons.classList.add('hidden');
     }
 });
@@ -380,8 +316,17 @@ commandSuggestions.addEventListener('click', (e) => {
         messageInput.value = command;
         commandSuggestions.classList.add('hidden');
         messageInput.focus();
-        if (command === '/credits' || command === '/infoupdate') {
+        if (command !== '/persona') {
             handleUserInput(command);
         }
+    }
+});
+
+// Event listener for timezone buttons
+chatWindow.addEventListener('click', (e) => {
+    const target = e.target.closest('.timezone-btn');
+    if (target) {
+        displayRealTimeClock(target.dataset.country, target.dataset.timezone);
+        target.parentElement.parentElement.remove(); // Remove the button panel after selection
     }
 });
