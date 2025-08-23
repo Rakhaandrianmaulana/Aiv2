@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Asisten AI Canggih v2.4</title>
+    <title>Asisten AI Canggih v2</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -11,72 +11,73 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Fira+Code&display=swap" rel="stylesheet">
     
     <style>
-        /* --- THEME SYSTEM USING CSS VARIABLES --- */
-        :root {
-            /* Dark Theme (Default) */
-            --bg-main: #030712;
-            --bg-header: rgba(17, 24, 39, 0.5); /* bg-gray-900/50 */
-            --bg-content: rgba(31, 41, 55, 0.8); /* bg-gray-800/80 */
-            --bg-input: rgba(31, 41, 55, 0.8);
-            --bg-suggestion: rgba(55, 65, 81, 0.8); /* bg-gray-700/80 */
-            --bg-suggestion-hover: rgba(75, 85, 99, 0.8); /* bg-gray-600/80 */
-            --text-primary: #d1d5db;
-            --text-secondary: #9ca3af;
-            --border-color: rgba(55, 65, 81, 0.5); /* border-gray-700/50 */
-            --code-bg: #111827;
-            --code-header-bg: #1f2937;
-        }
-
-        .light-theme {
-            /* Light Theme Overrides */
-            --bg-main: #f3f4f6; /* bg-gray-100 */
-            --bg-header: rgba(255, 255, 255, 0.5);
-            --bg-content: #ffffff;
-            --bg-input: #e5e7eb; /* bg-gray-200 */
-            --bg-suggestion: #e5e7eb;
-            --bg-suggestion-hover: #d1d5db; /* bg-gray-300 */
-            --text-primary: #1f2937; /* bg-gray-800 */
-            --text-secondary: #4b5563; /* bg-gray-600 */
-            --border-color: rgba(209, 213, 219, 0.8); /* border-gray-300/80 */
-            --code-bg: #f9fafb; /* bg-gray-50 */
-            --code-header-bg: #e5e7eb;
-        }
-
         body {
             font-family: 'Inter', sans-serif;
-            background-color: var(--bg-main);
-            color: var(--text-primary);
-            transition: background-color 0.3s, color 0.3s;
+            background-color: #030712;
+            color: #d1d5db;
         }
-        
-        header, footer, #suggestion-buttons {
-            background-color: var(--bg-header);
-            border-color: var(--border-color);
-            backdrop-filter: blur(4px);
-            transition: background-color 0.3s, border-color 0.3s;
-        }
-
-        .ai-message-content, .markdown-box {
-            background-color: var(--bg-content);
-            transition: background-color 0.3s;
-        }
-        
-        #message-input, .suggestion-btn {
-            background-color: var(--bg-input);
-            transition: background-color 0.3s;
-        }
-        .suggestion-btn:hover {
-            background-color: var(--bg-suggestion-hover);
-        }
-        
-        .markdown-box { background-color: var(--code-bg); border-color: var(--border-color); }
-        .code-header { background-color: var(--code-header-bg); }
-        .markdown-box pre { background-color: var(--code-bg); color: var(--text-primary); }
-
         #chat-window::-webkit-scrollbar { width: 6px; }
-        #chat-window::-webkit-scrollbar-track { background: transparent; }
-        #chat-window::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 3px; }
-        #chat-window::-webkit-scrollbar-thumb:hover { background: var(--text-secondary); }
+        #chat-window::-webkit-scrollbar-track { background: #1f293780; }
+        #chat-window::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 3px; }
+        #chat-window::-webkit-scrollbar-thumb:hover { background: #6b7280; }
+        
+        .markdown-box {
+            background-color: #111827;
+            border: 1px solid #374151;
+            border-radius: 0.5rem;
+            overflow: hidden;
+            margin-top: 0.75rem;
+            margin-bottom: 0.5rem;
+        }
+        .code-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background-color: #1f2937;
+            padding: 0.35rem 0.75rem;
+            font-size: 0.8rem;
+            color: #9ca3af;
+            font-family: 'Fira Code', monospace;
+        }
+        .copy-btn {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            background-color: #4b5563;
+            color: #d1d5db;
+            border: none;
+            border-radius: 0.375rem;
+            padding: 0.25rem 0.6rem;
+            font-size: 0.75rem;
+            cursor: pointer;
+            transition: all 0.2s ease-in-out;
+        }
+        .copy-btn:hover {
+            background-color: #6b7280;
+            color: white;
+        }
+        .copy-btn.copied {
+            background-color: #16a34a;
+            color: white;
+        }
+        .markdown-box pre {
+            font-family: 'Fira Code', monospace;
+            font-size: 0.85rem;
+            line-height: 1.5;
+            color: #d1d5db;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            padding: 1rem;
+            margin: 0;
+            background-color: #111827;
+        }
+        
+        #file-preview {
+            transition: all 0.3s ease-in-out;
+        }
+        .suggestion-item p {
+            margin: 0;
+        }
     </style>
 </head>
 <body class="antialiased">
@@ -85,45 +86,33 @@
     <audio id="background-audio" loop></audio>
 
     <div class="flex flex-col h-screen">
-        <header class="p-4 text-center shadow-lg flex-shrink-0 border-b flex items-center justify-between">
-            <div class="w-10"></div> <!-- Spacer -->
+        <header class="bg-gray-900/50 backdrop-blur-sm border-b border-gray-700/50 p-4 text-center shadow-lg flex-shrink-0">
             <h1 class="text-xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-600">
-                <i class="fas fa-brain mr-2"></i> Asisten AI Canggih <span class="text-xs font-mono text-cyan-500">v2.4</span>
+                <i class="fas fa-brain mr-2"></i> Asisten AI Canggih <span class="text-xs font-mono text-cyan-500">v2.0</span>
             </h1>
-            <button id="theme-toggle" class="text-xl w-10 h-10 rounded-full hover:bg-gray-500/20 transition-colors" aria-label="Toggle theme">
-                <i class="fas fa-sun"></i>
-            </button>
         </header>
 
         <main id="chat-window" class="flex-1 p-4 overflow-y-auto space-y-6">
             <!-- Pesan akan dimasukkan di sini oleh JavaScript -->
         </main>
 
-        <div id="suggestion-buttons" class="p-4 border-t flex-shrink-0">
+        <div id="suggestion-buttons" class="p-4 border-t border-gray-700/50 bg-gray-900/30 backdrop-blur-sm flex-shrink-0">
             <div class="flex flex-wrap gap-2 justify-center">
-                <button class="suggestion-btn text-sm font-medium py-2 px-4 rounded-full">Jelaskan tentang AI Persona</button>
-                <button class="suggestion-btn text-sm font-medium py-2 px-4 rounded-full">Apa saja yang baru di v2.4?</button>
-                <button class="suggestion-btn text-sm font-medium py-2 px-4 rounded-full">Beri ide cerita fantasi</button>
+                <button class="suggestion-btn bg-gray-700/80 hover:bg-gray-600/80 text-sm font-medium py-2 px-4 rounded-full transition-colors duration-200">Jelaskan tentang AI Persona</button>
+                <button class="suggestion-btn bg-gray-700/80 hover:bg-gray-600/80 text-sm font-medium py-2 px-4 rounded-full transition-colors duration-200">Apa saja yang baru di v2?</button>
+                <button class="suggestion-btn bg-gray-700/80 hover:bg-gray-600/80 text-sm font-medium py-2 px-4 rounded-full transition-colors duration-200">Beri ide cerita fantasi</button>
             </div>
         </div>
 
-        <footer class="p-4 border-t relative flex-shrink-0">
+        <footer class="p-4 bg-gray-900/50 backdrop-blur-sm border-t border-gray-700/50 relative flex-shrink-0">
             <div id="command-suggestions" class="absolute bottom-full left-4 right-4 mb-2 p-2 bg-gray-800/90 backdrop-blur-md border border-gray-700 rounded-lg shadow-lg hidden origin-bottom">
                 <div class="suggestion-item cursor-pointer p-2 hover:bg-gray-700 rounded-md" data-command="/persona ">
                     <p class="font-bold text-sm text-yellow-400">/persona [deskripsi]</p>
-                    <p class="text-xs text-gray-400">Ubah kepribadian AI untuk roleplay.</p>
-                </div>
-                <div class="suggestion-item cursor-pointer p-2 hover:bg-gray-700 rounded-md" data-command="/time">
-                    <p class="font-bold text-sm text-purple-400">/time</p>
-                    <p class="text-xs text-gray-400">Tampilkan waktu real-time di berbagai negara.</p>
+                    <p class="text-xs text-gray-400">Ubah kepribadian AI untuk roleplay. Cth: /persona seorang bajak laut</p>
                 </div>
                  <div class="suggestion-item cursor-pointer p-2 hover:bg-gray-700 rounded-md" data-command="/infoupdate">
                     <p class="font-bold text-sm text-blue-400">/infoupdate</p>
                     <p class="text-xs text-gray-400">Lihat catatan pembaruan dan fitur baru.</p>
-                </div>
-                 <div class="suggestion-item cursor-pointer p-2 hover:bg-gray-700 rounded-md" data-command="/unban ">
-                    <p class="font-bold text-sm text-red-400">/unban [password]</p>
-                    <p class="text-xs text-gray-400">Buka blokir spam dengan password admin.</p>
                 </div>
                 <div class="suggestion-item cursor-pointer p-2 hover:bg-gray-700 rounded-md" data-command="/credits">
                     <p class="font-bold text-sm text-green-400">/credits</p>
@@ -151,7 +140,7 @@
                 <button type="button" id="upload-btn" class="bg-gray-700 hover:bg-gray-600 text-white rounded-full w-11 h-11 flex items-center justify-center transition-colors flex-shrink-0" aria-label="Unggah file">
                     <i class="fas fa-paperclip"></i>
                 </button>
-                <input type="text" id="message-input" class="flex-1 border border-gray-700 rounded-full py-2 px-5 focus:outline-none focus:ring-2 focus:ring-cyan-500 transition-all min-w-0" placeholder="Ubah persona dengan /persona atau kirim pesan...">
+                <input type="text" id="message-input" class="flex-1 bg-gray-800/80 border border-gray-700 rounded-full py-2 px-5 focus:outline-none focus:ring-2 focus:ring-cyan-500 transition-all min-w-0" placeholder="Ubah persona dengan /persona atau kirim pesan...">
                 <button type="submit" id="submit-button" class="bg-blue-600 hover:bg-blue-700 text-white rounded-full w-11 h-11 flex items-center justify-center transition-transform duration-200 active:scale-90 flex-shrink-0" aria-label="Kirim pesan">
                     <i class="fas fa-paper-plane"></i>
                 </button>
@@ -162,14 +151,34 @@
     <audio id="notification-sound" src="https://assets.mixkit.co/sfx/preview/mixkit-correct-answer-tone-2870.mp3" preload="auto"></audio>
 
     <!-- ========= TEMPLATES ========= -->
-    <template id="user-message-template"><div class="flex items-end gap-3 justify-end"><div class="message-content bg-blue-600 p-3 rounded-lg rounded-br-none max-w-lg text-white"></div><div class="flex-shrink-0 w-8 h-8 rounded-full bg-gray-600 flex items-center justify-center"><i class="fas fa-user text-white"></i></div></div></template>
-    <template id="ai-message-template"><div class="flex items-end gap-3"><div class="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center"><i class="fas fa-robot text-white"></i></div><div class="message-content ai-message-content backdrop-blur-sm p-3 rounded-lg rounded-bl-none max-w-lg"></div></div></template>
-    <template id="system-message-template"><div class="message-content text-xs text-gray-400 w-full my-2"></div></template>
-    <template id="typing-indicator-template"><div class="flex items-end gap-3" id="typing-indicator"><div class="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center"><i class="fas fa-robot text-white"></i></div><div class="bg-gray-800/80 backdrop-blur-sm p-3 rounded-lg rounded-bl-none"><div class="flex items-center gap-1.5"><span class="w-2 h-2 bg-gray-400 rounded-full animate-pulse" style="animation-delay: 0s;"></span><span class="w-2 h-2 bg-gray-400 rounded-full animate-pulse" style="animation-delay: 0.2s;"></span><span class="w-2 h-2 bg-gray-400 rounded-full animate-pulse" style="animation-delay: 0.4s;"></span></div></div></div></template>
-    <template id="clock-display-template">
-        <div class="p-3 border border-purple-500/30 rounded-lg bg-gray-800/50 backdrop-blur-sm">
-            <p class="text-sm text-gray-300">Waktu saat ini di <strong class="country-name text-purple-400"></strong>:</p>
-            <p class="time-display text-2xl font-mono font-bold text-white mt-1">--:--:--</p>
+    <template id="user-message-template">
+        <div class="flex items-end gap-3 justify-end">
+            <div class="message-content bg-blue-600 p-3 rounded-lg rounded-br-none max-w-lg text-white"></div>
+            <div class="flex-shrink-0 w-8 h-8 rounded-full bg-gray-600 flex items-center justify-center"><i class="fas fa-user text-white"></i></div>
+        </div>
+    </template>
+
+    <template id="ai-message-template">
+        <div class="flex items-end gap-3">
+            <div class="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center"><i class="fas fa-robot text-white"></i></div>
+            <div class="message-content bg-gray-800/80 backdrop-blur-sm p-3 rounded-lg rounded-bl-none max-w-lg"></div>
+        </div>
+    </template>
+
+    <template id="system-message-template">
+        <div class="message-content text-xs text-gray-400 w-full my-2"></div>
+    </template>
+
+    <template id="typing-indicator-template">
+         <div class="flex items-end gap-3" id="typing-indicator">
+            <div class="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center"><i class="fas fa-robot text-white"></i></div>
+            <div class="bg-gray-800/80 backdrop-blur-sm p-3 rounded-lg rounded-bl-none">
+                <div class="flex items-center gap-1.5">
+                    <span class="w-2 h-2 bg-gray-400 rounded-full animate-pulse" style="animation-delay: 0s;"></span>
+                    <span class="w-2 h-2 bg-gray-400 rounded-full animate-pulse" style="animation-delay: 0.2s;"></span>
+                    <span class="w-2 h-2 bg-gray-400 rounded-full animate-pulse" style="animation-delay: 0.4s;"></span>
+                </div>
+            </div>
         </div>
     </template>
 
