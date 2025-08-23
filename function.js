@@ -29,6 +29,7 @@ const MODEL_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemin
 let conversationHistory = [];
 let attachedFile = null;
 let aiPersona = "Anda adalah Asisten AI Canggih v2. Anda sangat membantu, ramah, dan selalu memberikan jawaban yang jelas. Anda tahu bahwa Anda dapat mengubah kepribadian Anda jika pengguna memintanya dengan perintah /persona.";
+let activeClockIntervals = []; // To manage multiple clock instances
 
 const songs = [
     { title: "Mitty Zasia - Sesuatu di Jogja", url: "https://files.catbox.moe/3yeu0x.mp3" },
@@ -36,16 +37,26 @@ const songs = [
 ];
 let currentSong = {};
 
+// FIXED: Update log now includes V1 and has a more descriptive V2.1 entry.
 const updateLog = [
     {
+        version: "2.2", date: "26 Agustus 2025",
+        features: ["<strong>Perbaikan Bug Kritis:</strong> Memperbaiki jam yang tidak berjalan real-time, memastikan saran pertanyaan hilang setelah digunakan, dan melengkapi catatan /infoupdate."]
+    },
+    {
         version: "2.1", date: "25 Agustus 2025",
-        features: ["<strong>Jam Real-Time:</strong> Menambahkan perintah <code>/time</code> untuk menampilkan jam digital yang berjalan secara live untuk berbagai negara."]
+        features: ["<strong>Fitur Jam Ditambahkan:</strong> Implementasi awal perintah <code>/time</code> untuk menampilkan waktu di berbagai negara (versi ini mengandung bug pada update real-time)."]
     },
     {
         version: "2.0", date: "24 Agustus 2025",
         features: ["<strong>Sistem Persona AI:</strong> Kemampuan mengubah kepribadian AI dengan <code>/persona</code>.", "<strong>Log Pembaruan:</strong> Perintah <code>/infoupdate</code> ditambahkan.", "<strong>Peningkatan API:</strong> Migrasi ke model Gemini 1.5 Flash."]
+    },
+    {
+        version: "1.0", date: "23 Agustus 2025",
+        features: ["<strong>Rilis Awal:</strong> Fungsionalitas chat dasar dengan Gemini.", "<strong>Analisis Gambar:</strong> Kemampuan untuk mengunggah dan mendeskripsikan gambar.", "<strong>Musik Latar Acak:</strong> Pemutaran musik acak saat aplikasi dimulai."]
     }
 ];
+
 
 // --- Initial Setup ---
 document.addEventListener('DOMContentLoaded', () => {
@@ -63,7 +74,7 @@ document.addEventListener('DOMContentLoaded', () => {
         overlay.style.display = 'none';
     }, { once: true });
     
-    const initialMessage = "Selamat datang di Asisten AI v2.1! Saya sekarang memiliki fitur jam real-time. Coba ketik <code>/time</code> untuk melihat waktu di berbagai negara.";
+    const initialMessage = "Selamat datang di Asisten AI v2.2! Semua bug telah diperbaiki. Coba <code>/time</code> untuk melihat jam real-time yang berfungsi penuh.";
     displayMessage(initialMessage, 'ai');
 });
 
@@ -89,6 +100,9 @@ const fileToGenerativePart = (file) => {
 
 // --- Core Functions ---
 const handleUserInput = async (text, file = null) => {
+    // FIXED: Suggestion buttons now hide immediately on any input.
+    suggestionButtons.classList.add('hidden');
+
     submitButton.disabled = true;
     messageInput.disabled = true;
 
@@ -116,7 +130,7 @@ const handleCommand = (command) => {
         case '/infoupdate': {
             let updateHTML = '<div class="p-3 border border-blue-500/30 rounded-lg bg-gray-800/50 backdrop-blur-sm">';
             updateLog.forEach(log => {
-                updateHTML += `<div class="mb-4"><h3 class="font-bold text-blue-400 text-lg">Versi ${log.version} <span class="text-xs font-normal text-gray-400">- ${log.date}</span></h3><ul class="list-disc list-inside text-sm text-gray-300 mt-2 space-y-1">${log.features.map(feature => `<li>${feature}</li>`).join('')}</ul></div>`;
+                updateHTML += `<div class="mb-4 last:mb-0"><h3 class="font-bold text-blue-400 text-lg">Versi ${log.version} <span class="text-xs font-normal text-gray-400">- ${log.date}</span></h3><ul class="list-disc list-inside text-sm text-gray-300 mt-2 space-y-1">${log.features.map(feature => `<li>${feature}</li>`).join('')}</ul></div>`;
             });
             updateHTML += '</div>';
             displayMessage(updateHTML, 'system');
@@ -188,7 +202,7 @@ const getAIResponse = async (prompt, file) => {
 };
 
 // --- UI Display Functions ---
-const displayMessage = (text, sender, file = null) => {
+const displayMessage = (htmlContent, sender, file = null) => {
     const template = sender === 'user' ? userMessageTemplate : sender === 'ai' ? aiMessageTemplate : systemMessageTemplate;
     const messageClone = template.content.cloneNode(true);
     const contentContainer = messageClone.querySelector('.message-content');
@@ -197,11 +211,12 @@ const displayMessage = (text, sender, file = null) => {
     if (file && sender === 'user') {
         finalHTML += `<img src="${URL.createObjectURL(file)}" alt="Uploaded Image" class="max-w-xs rounded-lg mb-2 cursor-pointer" onclick="window.open(this.src)">`;
     }
-    if (text) {
+
+    if (htmlContent) {
         if (sender === 'system') {
-            finalHTML += text;
+            finalHTML += htmlContent;
         } else {
-            const parts = text.split(/(```\w*\n[\s\S]*?\n```)/g);
+            const parts = htmlContent.split(/(```\w*\n[\s\S]*?\n```)/g);
             parts.forEach(part => {
                 if (part.startsWith('```')) {
                     const match = part.match(/```(\w*)\n([\s\S]*?)\n```/);
@@ -230,6 +245,7 @@ const displayMessage = (text, sender, file = null) => {
     });
 
     chatWindow.scrollTop = chatWindow.scrollHeight;
+    return contentContainer;
 };
 
 const displayTypingIndicator = () => {
@@ -258,23 +274,29 @@ const removeFile = () => {
 // --- V2.1 Feature: Real-Time Clock ---
 const createTimezoneButton = (country, timezone) => `<button class="timezone-btn bg-gray-700 hover:bg-purple-600 text-sm font-medium py-2 px-4 rounded-full transition-colors duration-200" data-timezone="${timezone}" data-country="${country}">${country}</button>`;
 
+// FIXED: Clock logic is now stable and updates in real-time.
 const displayRealTimeClock = (country, timezone) => {
-    const clockClone = clockDisplayTemplate.content.cloneNode(true);
-    const clockContainer = clockClone.querySelector('div');
-    clockClone.querySelector('.country-name').textContent = country;
-    const timeDisplayEl = clockClone.querySelector('.time-display');
+    const clockTemplate = systemMessageTemplate.content.cloneNode(true);
+    const contentContainer = clockTemplate.querySelector('.message-content');
+    
+    const clockInstance = clockDisplayTemplate.content.cloneNode(true);
+    clockInstance.querySelector('.country-name').textContent = country;
+    const timeDisplayEl = clockInstance.querySelector('.time-display');
 
     const updateClock = () => {
-        const timeString = new Date().toLocaleTimeString('id-ID', {
-            timeZone: timezone, hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
-        }).replace(/\./g, ':');
+        const timeString = new Date().toLocaleTimeString('en-GB', {
+            timeZone: timezone, hour: '2-digit', minute: '2-digit', second: '2-digit'
+        });
         timeDisplayEl.textContent = timeString;
     };
     
-    updateClock(); // Initial display
-    setInterval(updateClock, 1000); // Update every second
+    updateClock();
+    const intervalId = setInterval(updateClock, 1000);
+    activeClockIntervals.push(intervalId); // Store interval to manage it later if needed
 
-    displayMessage(clockContainer.outerHTML, 'system');
+    contentContainer.appendChild(clockInstance);
+    chatWindow.appendChild(clockTemplate);
+    chatWindow.scrollTop = chatWindow.scrollHeight;
 };
 
 // --- Event Listeners Setup ---
@@ -283,7 +305,6 @@ messageForm.addEventListener('submit', (e) => {
     const message = messageInput.value.trim();
     if (!message && !attachedFile) return;
     handleUserInput(message, attachedFile);
-    suggestionButtons.classList.add('hidden');
 });
 
 uploadBtn.addEventListener('click', () => fileInput.click());
@@ -301,7 +322,6 @@ suggestionButtons.addEventListener('click', (e) => {
     if (e.target.classList.contains('suggestion-btn')) {
         const suggestionText = e.target.textContent;
         handleUserInput(suggestionText.includes('v2') ? '/infoupdate' : suggestionText);
-        suggestionButtons.classList.add('hidden');
     }
 });
 
@@ -322,11 +342,10 @@ commandSuggestions.addEventListener('click', (e) => {
     }
 });
 
-// Event listener for timezone buttons
 chatWindow.addEventListener('click', (e) => {
     const target = e.target.closest('.timezone-btn');
     if (target) {
         displayRealTimeClock(target.dataset.country, target.dataset.timezone);
-        target.parentElement.parentElement.remove(); // Remove the button panel after selection
+        target.closest('.message-content').parentElement.remove();
     }
 });
