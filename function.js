@@ -22,7 +22,7 @@ const systemMessageTemplate = document.getElementById('system-message-template')
 const typingIndicatorTemplate = document.getElementById('typing-indicator-template');
 
 // --- API, State, and Music Management ---
-const API_KEY = 'AIzaSyA0xg5Q3rfbS_amXM5wfghAvyPjAOviBIg';
+const API_KEY ='AIzaSyBfARzwWNcs0QJm9ZIJwWn6Kk2GkfMgGJ8';
 const MODEL_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${API_KEY}`;
 
 let conversationHistory = [];
